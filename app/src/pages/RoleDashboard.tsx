@@ -52,24 +52,29 @@ const RoleDashboard: React.FC = () => {
       // Llamada real al backend de E.B. Maquilishuat
       const response = await fetch('/api/policies/ask', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': 'u_test_user',
+          'x-user-role': role || 'profesor',
+          'x-user-email': `${role}@escuela.com`
+        },
         body: JSON.stringify({
-          question: currentQuery,
-          role: role,
-          userId: 'u_test_user' // Temporal para el prototipo
+          question: currentQuery
         })
       });
 
       const data = await response.json();
 
-      if (data.error) throw new Error(data.error);
+      if (!response.ok) throw new Error(data.error || 'Error en la respuesta del servidor');
+
+      const result = data.data; // El backend envuelve el resultado en 'data'
 
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
-        text: data.answer,
+        text: result.answer,
         sender: 'ai',
-        reference: data.references && data.references.length > 0 
-          ? `${data.references[0].documentName} - ${data.references[0].category}` 
+        reference: result.sourceDocuments && result.sourceDocuments.length > 0 
+          ? `Documentos: ${result.sourceDocuments.join(', ')}` 
           : "Base de Conocimiento EBM",
         timestamp: new Date()
       };
