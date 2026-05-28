@@ -3,9 +3,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
-// En producción, serviremos el frontend compilado desde el mismo servidor Express
-// para evitar problemas de CORS y simplificar el despliegue.
-
 // Importaciones del servidor original
 import bodyParser from 'body-parser';
 import cors from 'cors';
@@ -17,7 +14,11 @@ import { addAuditEntry } from '../src/repositories/auditRepository';
 import policiesRoutes from './policies-routes';
 
 const app = express();
-const port = process.env.PORT || 4000;
+
+// Configuración de Puerto para Render
+const rawPort = process.env.PORT || '10000';
+const parsedPort = parseInt(rawPort, 10);
+const finalPort = isNaN(parsedPort) ? 10000 : parsedPort;
 
 app.use(cors());
 app.use(bodyParser.json());
@@ -59,14 +60,10 @@ app.post('/api/query', async (req, res) => {
 });
 
 // Servir archivos estáticos del Frontend en producción
-// En el despliegue, la estructura compilada será:
-// dist/
-//   api/ (server.js)
-//   app/ (archivos del frontend)
 const frontendPath = path.join(process.cwd(), 'dist/app');
 
 if (process.env.NODE_ENV === 'production') {
-  console.log(`Serving static files from: ${frontendPath}`);
+  console.log(`[SERVER] Serving static files from: ${frontendPath}`);
   app.use(express.static(frontendPath));
   
   app.get('*', (req, res) => {
@@ -81,21 +78,11 @@ async function start(): Promise<void> {
     const address = server.address();
     const actualPort = typeof address === 'string' ? address : address?.port;
     console.log(`[SERVER] Listening on 0.0.0.0:${actualPort}`);
-    console.log(`[SERVER] Environment: ${process.env.NODE_ENV}`);
+    console.log(`[SERVER] Mode: ${process.env.NODE_ENV || 'development'}`);
   });
 }
 
 start().catch((error) => {
-  console.error('Error starting server:', error);
-  process.exit(1);
-});
-s : address?.port;
-    console.log(`[SERVER] Listening on 0.0.0.0:${actualPort}`);
-    console.log(`[SERVER] Environment: ${process.env.NODE_ENV}`);
-  });
-}
-
-start().catch((error) => {
-  console.error('Error starting server:', error);
+  console.error('[ERROR] Starting server:', error);
   process.exit(1);
 });
