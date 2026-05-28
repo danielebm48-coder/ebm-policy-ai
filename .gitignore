@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.development
+.env.production
+.env.local
+.DS_Store
+dist/
+.next/
+coverage/
+pnpm-lock.yaml
+yarn.lock
+npm-debug.log*
+data/
+.vscode/
+.idea/
+*.log
