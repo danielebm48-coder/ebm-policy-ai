@@ -83,7 +83,7 @@ const RoleDashboard: React.FC = () => {
       console.error('Error en consulta:', error);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: "Lo siento, hubo un error al conectar con mi repositorio de políticas. Por favor, intenta de nuevo.",
+        text: `Error de conexión: ${error instanceof Error ? error.message : 'Error desconocido'}. Por favor, verifica la configuración de Supabase y Gemini en Render.`,
         sender: 'ai',
         timestamp: new Date()
       };
