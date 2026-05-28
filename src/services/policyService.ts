@@ -9,7 +9,10 @@ import {
 import { addAuditEntry } from '../repositories/auditRepository';
 
 export async function createPolicy(payload: Omit<PolicyDocument, 'id' | 'createdAt' | 'updatedAt' | 'version'>): Promise<PolicyDocument> {
-  const policy = await persistPolicy(payload);
+  const policy = await persistPolicy({
+    ...payload,
+    version: 1
+  });
   await addAuditEntry({
     id: `audit_${Math.random().toString(36).substring(2, 10)}`,
     action: 'create',

@@ -11,9 +11,9 @@
     "skipLibCheck": true,
     "moduleResolution": "node",
     "ignoreDeprecations": "6.0",
-    "types": ["node"],
+    "types": ["node", "react"],
+    "jsx": "react-jsx",
     "resolveJsonModule": true,
-    "jsx": "react-jsx"
   },
   "include": ["src/**/*.ts", "api/**/*.ts", "app/src/**/*.tsx"]
 }
