@@ -27,7 +27,6 @@ function mapVersionRow(row: any): PolicyVersion {
     summary: row.summary,
     status: row.status as PolicyStatus,
     effectiveDate: row.effective_date,
-    version: row.version,
     tags: row.tags,
     content: row.content,
     createdBy: row.created_by,
@@ -52,7 +51,9 @@ export async function createPolicy(policy: Omit<PolicyDocument, 'id' | 'createdA
     [`version_${Math.random().toString(36).substring(2, 10)}`, id, policy.title, policy.summary, policy.status, policy.effectiveDate, version, JSON.stringify(policy.tags), policy.content, policy.createdBy, now],
   );
 
-  return getPolicyById(id)!;
+  const created = await getPolicyById(id);
+  if (!created) throw new Error('Failed to create policy');
+  return created;
 }
 
 export async function updatePolicy(policyId: string, updates: Partial<Omit<PolicyDocument, 'id' | 'createdAt'>>): Promise<PolicyDocument | null> {

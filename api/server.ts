@@ -49,6 +49,7 @@ app.post('/api/query', async (req, res) => {
   });
 
   await addAuditEntry({
+    id: `audit_${Math.random().toString(36).substring(2, 10)}`,
     action: 'query',
     actorId: userId,
     details: `Consulta IA: ${question}`,

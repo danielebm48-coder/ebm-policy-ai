@@ -11,8 +11,8 @@ export async function addAuditEntry(entry: Omit<AuditEntry, 'createdAt'>): Promi
   );
 
   return {
+    ...entry,
     id,
     createdAt,
-    ...entry,
   };
 }

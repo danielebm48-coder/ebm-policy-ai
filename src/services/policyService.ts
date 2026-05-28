@@ -11,6 +11,7 @@ import { addAuditEntry } from '../repositories/auditRepository';
 export async function createPolicy(payload: Omit<PolicyDocument, 'id' | 'createdAt' | 'updatedAt' | 'version'>): Promise<PolicyDocument> {
   const policy = await persistPolicy(payload);
   await addAuditEntry({
+    id: `audit_${Math.random().toString(36).substring(2, 10)}`,
     action: 'create',
     actorId: policy.createdBy,
     details: `Política creada: ${policy.title}`,
@@ -22,6 +23,7 @@ export async function updatePolicy(policyId: string, updates: Partial<Omit<Polic
   const policy = await persistPolicyUpdate(policyId, updates);
   if (!policy) return null;
   await addAuditEntry({
+    id: `audit_${Math.random().toString(36).substring(2, 10)}`,
     action: 'update',
     actorId: policy.updatedBy,
     details: `Política actualizada: ${policy.title}`,

@@ -266,18 +266,23 @@ export async function getQueryStatistics(startDate?: string, endDate?: string) {
 
     const stats = {
       total_queries: data?.length || 0,
-      completed: data?.filter((q: any) => q.status === 'completed').length || 0,
-      errors: data?.filter((q: any) => q.status === 'error').length || 0,
-      average_rating:
-        data && data.length > 0
-          ? data
-              .filter((q: any) => q.helpful_rating !== null)
-              .reduce((sum: number, q: any) => sum + q.helpful_rating, 0) /
-            (data.filter((q: any) => q.helpful_rating !== null).length || 1)
-          : 0,
-      by_role: {},
-    };
-
+      const stats: {
+        total: number;
+        errors: number;
+        average_rating: number;
+        by_role: Record<string, number>;
+      } = {
+        total: data?.length || 0,
+        errors: data?.filter((q: any) => q.status === 'error').length || 0,
+        average_rating:
+          data && data.length > 0
+            ? data
+                .filter((q: any) => q.helpful_rating !== null)
+                .reduce((sum: number, q: any) => sum + q.helpful_rating, 0) /
+              (data.filter((q: any) => q.helpful_rating !== null).length || 1)
+            : 0,
+        by_role: {},
+      };
     // Agrupar por rol
     data?.forEach((query: any) => {
       if (!stats.by_role[query.user_role]) {
