@@ -77,9 +77,11 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 async function start(): Promise<void> {
-  app.listen(port, () => {
-    console.log(`[SERVER] Running in ${process.env.NODE_ENV || 'development'} mode`);
-    console.log(`[SERVER] Port: ${port}`);
+  const server = app.listen(Number(port), '0.0.0.0', () => {
+    const address = server.address();
+    const actualPort = typeof address === 'string' ? address : address?.port;
+    console.log(`[SERVER] Listening on 0.0.0.0:${actualPort}`);
+    console.log(`[SERVER] Environment: ${process.env.NODE_ENV}`);
   });
 }
 
