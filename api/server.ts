@@ -58,14 +58,16 @@ app.post('/api/query', async (req, res) => {
 });
 
 // Servir archivos estáticos del Frontend en producción
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const frontendPath = path.join(__dirname, '../app');
+// En el despliegue, la estructura compilada será:
+// dist/
+//   api/ (server.js)
+//   app/ (archivos del frontend)
+const frontendPath = path.join(process.cwd(), 'dist/app');
 
 if (process.env.NODE_ENV === 'production') {
+  console.log(`Serving static files from: ${frontendPath}`);
   app.use(express.static(frontendPath));
   
-  // Cualquier ruta que no sea API redirige al index.html de React (Single Page App)
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
       res.sendFile(path.join(frontendPath, 'index.html'));
@@ -75,7 +77,8 @@ if (process.env.NODE_ENV === 'production') {
 
 async function start(): Promise<void> {
   app.listen(port, () => {
-    console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${port}`);
+    console.log(`[SERVER] Running in ${process.env.NODE_ENV || 'development'} mode`);
+    console.log(`[SERVER] Port: ${port}`);
   });
 }
 
