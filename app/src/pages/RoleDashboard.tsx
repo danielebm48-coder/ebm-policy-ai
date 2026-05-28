@@ -65,9 +65,12 @@ const RoleDashboard: React.FC = () => {
 
       const data = await response.json();
 
-      if (!response.ok) throw new Error(data.error || 'Error en la respuesta del servidor');
+      if (!response.ok) {
+        const errorMsg = data.details || data.error || 'Error en el servidor';
+        throw new Error(errorMsg);
+      }
 
-      const result = data.data; // El backend envuelve el resultado en 'data'
+      const result = data.data;
 
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
