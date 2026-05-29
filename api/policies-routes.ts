@@ -274,6 +274,23 @@ router.post('/documents', requireAuth, async (req: AuthRequest, res: Response) =
     // Crear documento
     const document = await createDocument(name, type, category, text, user.id, description);
 
+    if (supabaseAdmin) {
+      const roleIds = ['admin', 'directivo', 'profesor', 'alumno', 'padre'];
+      const accessRows = roleIds.map((roleId) => ({
+        document_id: document.id,
+        role_id: roleId,
+        access_level: 'ask',
+      }));
+
+      const { error: accessError } = await supabaseAdmin
+        .from('document_access_policies')
+        .upsert(accessRows, { onConflict: 'document_id,role_id' });
+
+      if (accessError) {
+        console.warn('Failed to set document access policies:', accessError);
+      }
+    }
+
     // Registrar auditoría
     await logDocumentAccess(document.id, user.id, 'upload', `Uploaded by ${user.email}`, req.ip);
 
