@@ -374,6 +374,42 @@ router.get('/admin/statistics', requireAuth, async (req: AuthRequest, res: Respo
 });
 
 /**
+ * GET /api/policies/admin/unanswered - Consultas sin respuesta documental
+ */
+router.get('/admin/unanswered', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+
+    if (user.role !== 'admin' && user.role !== 'directivo') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const limit = parseInt(req.query.limit as string) || 20;
+    const { data, error } = await supabaseClient
+      .from('ai_queries')
+      .select('id, user_id, user_role, question, requested_at, completed_at, status')
+      .eq('error_message', 'NO_DOCUMENT_MATCH')
+      .order('requested_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    res.json({
+      success: true,
+      data: data || [],
+    });
+  } catch (error) {
+    console.error('Error fetching unanswered queries:', error);
+    res.status(500).json({
+      error: 'Failed to fetch unanswered queries',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
  * POST /api/policies/admin/permissions - Configurar permisos de rol
  */
 router.post('/admin/permissions', requireAuth, async (req: AuthRequest, res: Response) => {

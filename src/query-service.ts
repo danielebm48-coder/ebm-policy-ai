@@ -291,8 +291,10 @@ export async function processUserQuery(
       allowedChunks.push(...findBuiltInChunks(question, 5));
     }
 
+    const hasDocumentMatch = allowedChunks.some((chunk) => chunk.similarity > 0);
+
     // Obtener documentos completos asociados a los chunks
-    const uniqueDocIds = [...new Set(allowedChunks.map((c) => c.document_id))];
+    const uniqueDocIds = hasDocumentMatch ? [...new Set(allowedChunks.map((c) => c.document_id))] : [];
     const { data: documents, error: docError } = await supabaseClient
       .from('documents')
       .select('*')
@@ -303,7 +305,7 @@ export async function processUserQuery(
     }
 
     // Preparar contexto para la IA
-    const contextTexts = allowedChunks.map((chunk) => chunk.text);
+    const contextTexts = hasDocumentMatch ? allowedChunks.map((chunk) => chunk.text) : [];
     const sourceDocIds = uniqueDocIds;
 
     // Generar respuesta con IA
@@ -339,6 +341,7 @@ Cita siempre las secciones o documentos de los que obtienes la información.`;
         source_chunks: allowedChunks.map((c) => c.id),
         model_used: 'gemini-pro',
         tokens_used: tokensUsed,
+        error_message: hasDocumentMatch ? null : 'NO_DOCUMENT_MATCH',
         status: 'completed',
         completed_at: new Date().toISOString(),
       })

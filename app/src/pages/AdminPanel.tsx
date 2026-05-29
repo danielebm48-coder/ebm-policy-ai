@@ -18,6 +18,15 @@ interface PolicyDocument {
   upload_date?: string;
 }
 
+interface UnansweredQuery {
+  id: string;
+  user_id: string;
+  user_role: string;
+  question: string;
+  requested_at: string;
+  status: string;
+}
+
 const typeLabels: Record<DocumentType, string> = {
   policy: 'Politica',
   manual: 'Manual',
@@ -34,7 +43,9 @@ const AdminPanel: React.FC = () => {
   const apiBaseUrl = (__API_BASE_URL__ || '').replace(/\/$/, '');
 
   const [documents, setDocuments] = useState<PolicyDocument[]>([]);
+  const [unansweredQueries, setUnansweredQueries] = useState<UnansweredQuery[]>([]);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [isLoadingUnanswered, setIsLoadingUnanswered] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -89,8 +100,32 @@ const AdminPanel: React.FC = () => {
     }
   };
 
+  const loadUnansweredQueries = async () => {
+    if (!auth?.user || (role !== 'admin' && role !== 'directivo')) return;
+
+    setIsLoadingUnanswered(true);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/policies/admin/unanswered?limit=12`, {
+        headers: authHeaders,
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.details || data.error || 'No se pudieron cargar las consultas sin respuesta.');
+      }
+
+      setUnansweredQueries(data.data || []);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'No se pudieron cargar las consultas sin respuesta.');
+    } finally {
+      setIsLoadingUnanswered(false);
+    }
+  };
+
   useEffect(() => {
     loadDocuments();
+    loadUnansweredQueries();
   }, [apiBaseUrl, authHeaders, auth?.user, role]);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -146,6 +181,7 @@ const AdminPanel: React.FC = () => {
       setForm({ name: '', type: 'policy', category: 'General', description: '', text: '' });
       setIsUploadOpen(false);
       await loadDocuments();
+      await loadUnansweredQueries();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'No se pudo cargar el documento.');
     } finally {
@@ -157,7 +193,7 @@ const AdminPanel: React.FC = () => {
     { label: 'Documentos activos', value: documents.length.toString(), trend: isLoadingDocuments ? 'Actualizando' : 'En linea', color: 'var(--primary-blue)' },
     { label: 'Tipos registrados', value: new Set(documents.map((doc) => doc.type)).size.toString(), trend: 'Repositorio', color: 'var(--accent-gold)' },
     { label: 'Rol actual', value: role || '-', trend: 'Permisos', color: 'var(--action-green)' },
-    { label: 'Carga IA', value: 'Lista', trend: 'Texto + RAG', color: '#ef4444' },
+    { label: 'Sin respuesta', value: unansweredQueries.length.toString(), trend: 'Por mejorar', color: '#ef4444' },
   ];
 
   return (
@@ -242,17 +278,28 @@ const AdminPanel: React.FC = () => {
         </section>
 
         <section>
-          <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Consultas Frecuentes</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+            <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Consultas sin respuesta documental</h2>
+            <button
+              onClick={loadUnansweredQueries}
+              style={{ backgroundColor: 'var(--white)', color: 'var(--primary-blue)', border: '1px solid var(--primary-blue)', padding: '0.4rem 0.65rem', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.75rem' }}
+            >
+              Actualizar
+            </button>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {[
-              { topic: 'Inasistencias y justificativos', count: 45 },
-              { topic: 'Uso de dispositivos moviles', count: 32 },
-              { topic: 'Protocolo de seguridad', count: 28 },
-              { topic: 'Criterios de evaluacion', count: 19 },
-            ].map((topic, i) => (
-              <div key={i} style={{ padding: '0.9rem', backgroundColor: 'var(--white)', borderRadius: 'var(--radius-md)', border: '1px solid var(--nickel-medium)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
-                <span style={{ fontSize: '0.875rem' }}>{topic.topic}</span>
-                <span style={{ fontWeight: 'bold', color: 'var(--primary-blue)', backgroundColor: 'var(--nickel-light)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem' }}>{topic.count}</span>
+            {unansweredQueries.length === 0 && (
+              <div style={{ padding: '0.9rem', backgroundColor: 'var(--white)', borderRadius: 'var(--radius-md)', border: '1px solid var(--nickel-medium)', color: '#64748b', fontSize: '0.875rem' }}>
+                {isLoadingUnanswered ? 'Cargando consultas...' : 'No hay consultas pendientes de documentar.'}
+              </div>
+            )}
+            {unansweredQueries.map((query) => (
+              <div key={query.id} style={{ padding: '0.9rem', backgroundColor: 'var(--white)', borderRadius: 'var(--radius-md)', border: '1px solid var(--nickel-medium)', display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{query.question}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', color: '#64748b', fontSize: '0.75rem' }}>
+                  <span>{query.user_role}</span>
+                  <span>{new Date(query.requested_at).toLocaleDateString()}</span>
+                </div>
               </div>
             ))}
           </div>
