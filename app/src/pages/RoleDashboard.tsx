@@ -76,7 +76,7 @@ const RoleDashboard: React.FC = () => {
     setIsTyping(true);
 
     try {
-      // Llamada real al backend de E.B. Maquilishuat
+      // Llamada real al backend de Maquilishuat
       const response = await fetch(`${apiBaseUrl}/api/policies/ask`, {
         method: 'POST',
         headers: { 

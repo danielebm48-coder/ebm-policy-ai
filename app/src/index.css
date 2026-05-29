@@ -1,11 +1,13 @@
 :root {
-  --primary-blue: #1A5F7A;
-  --accent-gold: #D4AF37;
-  --action-green: #86C8BC;
-  --nickel-light: #E2E8F0;
-  --nickel-medium: #CBD5E1;
+  --primary-blue: #4fa987;
+  --accent-gold: #9fc8b8;
+  --action-green: #7fcfb2;
+  --nickel-light: #edf5f2;
+  --nickel-medium: #c9ddd6;
   --white: #FFFFFF;
-  --text-dark: #334155;
+  --text-dark: #263f38;
+  --metallic-green: linear-gradient(135deg, #dff7ed 0%, #8fd8bd 38%, #4fa987 68%, #e7fff5 100%);
+  --metallic-green-dark: linear-gradient(135deg, #8ed8bd 0%, #4fa987 48%, #327a64 100%);
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --radius-md: 8px;
@@ -46,5 +48,5 @@ input {
 input:focus {
   outline: none;
   border-color: var(--primary-blue);
-  box-shadow: 0 0 0 2px rgba(26, 95, 122, 0.2);
+  box-shadow: 0 0 0 2px rgba(79, 169, 135, 0.22);
 }

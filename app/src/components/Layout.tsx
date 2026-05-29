@@ -18,7 +18,7 @@ const Layout: React.FC<LayoutProps> = ({ children, role, title }) => {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <nav style={{
-        backgroundColor: 'var(--primary-blue)',
+        background: 'var(--metallic-green-dark)',
         color: 'var(--white)',
         padding: '0.75rem 2rem',
         display: 'flex',
@@ -31,7 +31,7 @@ const Layout: React.FC<LayoutProps> = ({ children, role, title }) => {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
           <Link to="/" style={{ color: 'var(--white)', textDecoration: 'none', fontWeight: 'bold', fontSize: '1.25rem' }}>
-            Escuela Bilingüe Maquilishuat
+            Maquilishuat
           </Link>
           {role && (
             <span style={{ 

@@ -55,7 +55,7 @@ const LoginPage: React.FC = () => {
       alignItems: 'center', 
       justifyContent: 'center', 
       backgroundColor: 'var(--nickel-light)',
-      backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(26, 95, 122, 0.05) 0%, transparent 40%), radial-gradient(circle at 80% 80%, rgba(134, 200, 188, 0.05) 0%, transparent 40%)'
+      backgroundImage: 'linear-gradient(135deg, rgba(237, 245, 242, 0.96), rgba(220, 241, 233, 0.96)), radial-gradient(circle at 20% 20%, rgba(127, 207, 178, 0.18) 0%, transparent 38%), radial-gradient(circle at 80% 80%, rgba(79, 169, 135, 0.14) 0%, transparent 42%)'
     }}>
       <div style={{ 
         maxWidth: 420, 
@@ -70,7 +70,7 @@ const LoginPage: React.FC = () => {
           <div style={{ 
             width: '64px', 
             height: '64px', 
-            backgroundColor: 'var(--primary-blue)', 
+            background: 'var(--metallic-green-dark)', 
             borderRadius: '16px', 
             margin: '0 auto 1.5rem',
             display: 'flex',
@@ -79,11 +79,11 @@ const LoginPage: React.FC = () => {
             color: 'var(--white)',
             fontSize: '2rem',
             fontWeight: 'bold',
-            boxShadow: '0 4px 12px rgba(26, 95, 122, 0.3)'
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.45), 0 6px 18px rgba(79, 169, 135, 0.32)'
           }}>
-            S
+            M
           </div>
-          <h1 style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>E.B. Maquilishuat</h1>
+          <h1 style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>Maquilishuat</h1>
           <p style={{ color: '#64748b', fontSize: '0.9375rem' }}>AI Policy Repository</p>
         </div>
 
@@ -133,13 +133,13 @@ const LoginPage: React.FC = () => {
             style={{ 
               width: '100%', 
               padding: '0.875rem', 
-              backgroundColor: 'var(--primary-blue)', 
+              background: 'var(--metallic-green-dark)', 
               color: 'var(--white)', 
               border: 'none', 
               borderRadius: 'var(--radius-md)',
               fontWeight: 600,
               fontSize: '1rem',
-              boxShadow: '0 4px 6px rgba(26, 95, 122, 0.2)',
+              boxShadow: '0 4px 10px rgba(79, 169, 135, 0.24)',
               opacity: isSubmitting ? 0.7 : 1
             }}
           >
