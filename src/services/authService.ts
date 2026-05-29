@@ -3,6 +3,15 @@ import { UserProfile, UserRole } from '../models';
 
 const fallbackUsers: UserWithPassword[] = [
   {
+    id: 'u_dguzman_admin',
+    name: 'D. Guzman',
+    email: 'dguzman@ebm.edu.sv',
+    role: 'admin',
+    active: true,
+    password: 'admin2026',
+    createdAt: new Date(0).toISOString(),
+  },
+  {
     id: 'u_profesor_demo',
     name: 'Profesor Demo Web',
     email: 'profesor.demo@colegio.edu',

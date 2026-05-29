@@ -51,6 +51,7 @@ export async function createUser(user: Omit<UserWithPassword, 'createdAt'>): Pro
 export async function ensureSampleUsers(): Promise<void> {
   const sampleUsers = [
     { id: 'u_system', name: 'Sistema', email: 'system@colegio.edu', role: 'admin' as UserRole, active: true, password: 'system2026' },
+    { id: 'u_dguzman_admin', name: 'D. Guzman', email: 'dguzman@ebm.edu.sv', role: 'admin' as UserRole, active: true, password: 'admin2026' },
     { id: 'u_directivo', name: 'Directora Ana', email: 'ana@colegio.edu', role: 'directivo' as UserRole, active: true, password: 'directivo2026' },
     { id: 'u_profesor', name: 'Profesor Luis', email: 'luis@colegio.edu', role: 'profesor' as UserRole, active: true, password: 'profesor2026' },
     { id: 'u_demo_profesor', name: 'Profesor Demo', email: 'demo@colegio.edu', role: 'profesor' as UserRole, active: true, password: 'demo2026' },

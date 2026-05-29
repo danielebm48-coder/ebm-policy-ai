@@ -17,6 +17,7 @@ set name = excluded.name,
 insert into users (id, name, email, role, active, password, created_at)
 values
   ('u_system', 'Sistema', 'system@colegio.edu', 'admin', true, 'system2026', now()),
+  ('u_dguzman_admin', 'D. Guzman', 'dguzman@ebm.edu.sv', 'admin', true, 'admin2026', now()),
   ('u_directivo', 'Directora Ana', 'ana@colegio.edu', 'directivo', true, 'directivo2026', now()),
   ('u_profesor', 'Profesor Luis', 'luis@colegio.edu', 'profesor', true, 'profesor2026', now()),
   ('u_demo_profesor', 'Profesor Demo', 'demo@colegio.edu', 'profesor', true, 'demo2026', now()),
