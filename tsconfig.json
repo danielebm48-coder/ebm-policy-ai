@@ -10,9 +10,9 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "moduleResolution": "node",
-    "types": ["node", "react", "express", "body-parser", "cors"],
+    "types": ["node", "react", "express", "body-parser"],
     "jsx": "react-jsx",
     "resolveJsonModule": true,
   },
-  "include": ["src/**/*.ts", "api/**/*.ts", "app/src/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "api/**/*.ts", "app/src/**/*.tsx"]
 }

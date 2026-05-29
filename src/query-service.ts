@@ -18,6 +18,185 @@ interface ChunkWithSimilarity {
   similarity: number;
 }
 
+const BUILT_IN_CHUNKS: ChunkWithSimilarity[] = [
+  {
+    id: 'builtin_manual_convivencia',
+    document_id: 'builtin_manual_convivencia',
+    similarity: 0.1,
+    text:
+      'Manual de Convivencia Escolar 2026. Asistencia y puntualidad: los estudiantes deben ingresar antes de las 08:00 AM. Toda inasistencia debe ser justificada por el apoderado en un plazo de 48 horas. Tres atrasos injustificados en un mes resultaran en citacion al apoderado. El uso de telefonos celulares esta prohibido durante clase salvo autorizacion del profesor con fines pedagogicos. El ciberacoso sera sancionado segun la gravedad de la falta.',
+  },
+  {
+    id: 'builtin_politica_evaluacion',
+    document_id: 'builtin_politica_evaluacion',
+    similarity: 0.1,
+    text:
+      'Politica de Evaluacion y Calificacion. La escala de calificacion es de 1.0 a 7.0, con 4.0 como nota minima de aprobacion. Deben realizarse al menos 4 calificaciones por semestre en asignaturas principales. Si un estudiante falta a una evaluacion programada, debe presentar certificado medico. La nueva fecha sera coordinada por el profesor jefe y no puede exceder los 5 dias habiles desde el retorno. La inasistencia injustificada implica evaluacion con exigencia del 70%.',
+  },
+  {
+    id: 'builtin_protocolo_seguridad',
+    document_id: 'builtin_protocolo_seguridad',
+    similarity: 0.1,
+    text:
+      'Protocolo de Seguridad y Emergencias. Ante sismo, incendio u otra emergencia se activa la alarma sonora. Todos deben dirigirse con calma a la Zona de Seguridad asignada en el patio central. Los profesores deben portar el libro de clases para pasar lista. En accidente grave se activa el seguro escolar, se traslada al centro asistencial mas cercano y administracion contacta inmediatamente a los padres.',
+  },
+];
+
+function isVectorSearchEnabled(): boolean {
+  return process.env.ENABLE_VECTOR_SEARCH === 'true';
+}
+
+function tokenizeQuestion(question: string): string[] {
+  const stopWords = new Set([
+    'que',
+    'como',
+    'cuando',
+    'donde',
+    'cual',
+    'cuales',
+    'sobre',
+    'para',
+    'por',
+    'con',
+    'los',
+    'las',
+    'una',
+    'uno',
+    'del',
+    'de',
+    'la',
+    'el',
+    'en',
+    'y',
+    'o',
+    'a',
+  ]);
+
+  return question
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 2 && !stopWords.has(token));
+}
+
+async function findKeywordChunks(
+  question: string,
+  userRole: string,
+  limit: number = 5
+): Promise<ChunkWithSimilarity[]> {
+  const { data: accessRows, error: accessError } = await supabaseClient
+    .from('document_access_policies')
+    .select('document_id')
+    .eq('role_id', userRole)
+    .in('access_level', ['ask', 'search', 'view']);
+
+  if (accessError) {
+    console.warn('Error fetching document access policies:', accessError);
+    return [];
+  }
+
+  const documentIds = [...new Set((accessRows || []).map((row: any) => row.document_id))];
+  if (documentIds.length === 0) {
+    const { data: activeDocuments, error: docsError } = await supabaseClient
+      .from('documents')
+      .select('id')
+      .eq('status', 'active')
+      .limit(50);
+
+    if (docsError) {
+      console.warn('Error fetching active documents for fallback:', docsError);
+    }
+
+    documentIds.push(...[...new Set((activeDocuments || []).map((row: any) => row.id))]);
+  }
+
+  if (documentIds.length === 0) {
+    return findBuiltInChunks(question, limit);
+  }
+
+  const { data: chunks, error: chunksError } = await supabaseClient
+    .from('document_chunks')
+    .select('id, document_id, text, chunk_number')
+    .in('document_id', documentIds)
+    .limit(80);
+
+  if (chunksError) {
+    console.warn('Error fetching fallback chunks:', chunksError);
+    return [];
+  }
+
+  const tokens = tokenizeQuestion(question);
+  const scored = (chunks || [])
+    .map((chunk: any) => {
+      const normalizedText = String(chunk.text || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      const hits = tokens.filter((token) => normalizedText.includes(token)).length;
+
+      return {
+        id: chunk.id,
+        document_id: chunk.document_id,
+        text: chunk.text,
+        similarity: tokens.length > 0 ? hits / tokens.length : 0.1,
+      };
+    })
+    .sort((a: ChunkWithSimilarity, b: ChunkWithSimilarity) => b.similarity - a.similarity);
+
+  const matches = scored.filter((chunk: ChunkWithSimilarity) => chunk.similarity > 0);
+  return (matches.length > 0 ? matches : scored).slice(0, limit);
+}
+
+function findBuiltInChunks(question: string, limit: number = 5): ChunkWithSimilarity[] {
+  const tokens = tokenizeQuestion(question);
+  const scored = BUILT_IN_CHUNKS.map((chunk) => {
+    const normalizedText = chunk.text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    const hits = tokens.filter((token) => normalizedText.includes(token)).length;
+
+    return {
+      ...chunk,
+      similarity: tokens.length > 0 ? hits / tokens.length : chunk.similarity,
+    };
+  }).sort((a, b) => b.similarity - a.similarity);
+
+  const matches = scored.filter((chunk) => chunk.similarity > 0);
+  return (matches.length > 0 ? matches : scored).slice(0, limit);
+}
+
+function buildFallbackAnswer(question: string, chunks: ChunkWithSimilarity[]): string {
+  const context = chunks.map((chunk) => chunk.text).join('\n\n');
+  const tokens = tokenizeQuestion(question);
+  const sentences = context
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  const ranked = sentences
+    .map((sentence) => {
+      const normalized = sentence
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      const score = tokens.filter((token) => normalized.includes(token)).length;
+      return { sentence, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const selected = ranked
+    .filter((item) => item.score > 0)
+    .slice(0, 4)
+    .map((item) => item.sentence);
+
+  const answerSentences = selected.length > 0 ? selected : sentences.slice(0, 4);
+  const sources = [...new Set(chunks.map((chunk) => chunk.document_id))].join(', ');
+
+  return `Segun las politicas disponibles: ${answerSentences.join(' ')}\n\nFuente: ${sources || 'base de conocimiento escolar'}.`;
+}
+
 /**
  * Buscar chunks similares a una pregunta usando pgvector
  */
@@ -33,6 +212,7 @@ export async function findSimilarChunks(
     const { data, error } = await supabaseClient.rpc('match_documents', {
       query_embedding: questionEmbedding,
       match_count: limit,
+      match_threshold: 0.2,
     });
 
     if (error) {
@@ -82,13 +262,16 @@ export async function processUserQuery(
       throw new Error(`Failed to create query record: ${queryError.message}`);
     }
 
-    // Buscar chunks relevantes
-    let similarChunks: ChunkWithSimilarity[] = [];
-    try {
-      similarChunks = await findSimilarChunks(question, 5);
-    } catch (error) {
-      console.warn('Error finding similar chunks:', error);
-      // Continuar sin chunks si hay error en la búsqueda
+    // Buscar primero por texto para no depender de Gemini/embeddings en cada consulta.
+    let similarChunks: ChunkWithSimilarity[] = await findKeywordChunks(question, userRole, 5);
+
+    if (similarChunks.length === 0 && isVectorSearchEnabled()) {
+      try {
+        similarChunks = await findSimilarChunks(question, 5);
+      } catch (error) {
+        console.warn('Error finding similar chunks:', error);
+        // Continuar sin chunks si hay error en la busqueda vectorial.
+      }
     }
 
     // Filtrar por permisos de acceso
@@ -98,6 +281,14 @@ export async function processUserQuery(
       if (hasAccess) {
         allowedChunks.push(chunk);
       }
+    }
+
+    if (allowedChunks.length === 0 && similarChunks.some((chunk) => chunk.id.startsWith('builtin_'))) {
+      allowedChunks.push(...similarChunks.filter((chunk) => chunk.id.startsWith('builtin_')));
+    }
+
+    if (allowedChunks.length === 0) {
+      allowedChunks.push(...findBuiltInChunks(question, 5));
     }
 
     // Obtener documentos completos asociados a los chunks
@@ -126,9 +317,14 @@ Responde de manera clara, precisa y amable. Siempre basa tu respuesta en los doc
 Si no encuentras la información en los documentos, indícalo claramente al usuario.
 Cita siempre las secciones o documentos de los que obtienes la información.`;
 
-      const result = await generateResponse(question, contextTexts, systemPrompt);
-      answer = result.answer;
-      tokensUsed = result.tokensUsed;
+      try {
+        const result = await generateResponse(question, contextTexts, systemPrompt);
+        answer = result.answer;
+        tokensUsed = result.tokensUsed;
+      } catch (error) {
+        console.warn('Gemini response failed, using local fallback answer:', error);
+        answer = buildFallbackAnswer(question, allowedChunks);
+      }
     } else {
       answer =
         'No encontré documentos disponibles sobre este tema en el repositorio. Por favor, contacta con la administración para más información.';

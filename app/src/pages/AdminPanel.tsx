@@ -1,7 +1,24 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 
 const AdminPanel: React.FC = () => {
+  const navigate = useNavigate();
+  const storedAuth = localStorage.getItem('schoolPolicyAuth');
+  const auth = storedAuth ? JSON.parse(storedAuth) : null;
+  const role = auth?.user?.role;
+
+  useEffect(() => {
+    if (!auth?.token || !auth?.user) {
+      navigate('/login', { replace: true });
+      return;
+    }
+
+    if (role !== 'admin' && role !== 'directivo') {
+      navigate(`/dashboard/${role || 'profesor'}`, { replace: true });
+    }
+  }, [auth?.token, auth?.user, navigate, role]);
+
   // Datos simulados para el dashboard
   const stats = [
     { label: 'Consultas IA (Hoy)', value: '142', trend: '+12%', color: 'var(--primary-blue)' },
@@ -17,7 +34,7 @@ const AdminPanel: React.FC = () => {
   ];
 
   return (
-    <Layout role="directivo" title="Portal de Gobernanza y Decisiones">
+    <Layout role={role || 'directivo'} title="Portal de Gobernanza y Decisiones">
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '3rem' }}>
         {stats.map((stat, i) => (
           <div key={i} style={{ 

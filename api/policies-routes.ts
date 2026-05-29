@@ -33,6 +33,65 @@ const requireAuth = (req: AuthRequest, res: Response, next: NextFunction) => {
   next();
 };
 
+const roleNames: Record<string, string> = {
+  admin: 'Administrador',
+  directivo: 'Directivo/Rectoria',
+  profesor: 'Profesor',
+  alumno: 'Estudiante',
+  padre: 'Padre/Apoderado',
+};
+
+const fallbackNames: Record<string, string> = {
+  admin: 'Sistema',
+  directivo: 'Directora Ana',
+  profesor: 'Profesor Luis',
+  alumno: 'Alumno Mario',
+  padre: 'Padre Carmen',
+};
+
+async function ensureSupabaseUser(user: AuthRequest['user']): Promise<void> {
+  if (!user || !supabaseAdmin) {
+    throw new Error('Admin client not configured');
+  }
+
+  const now = new Date().toISOString();
+
+  const { error: roleError } = await supabaseAdmin
+    .from('roles')
+    .upsert(
+      {
+        id: user.role,
+        name: roleNames[user.role] || user.role,
+        description: `Rol ${user.role}`,
+        created_at: now,
+      },
+      { onConflict: 'id' }
+    );
+
+  if (roleError) {
+    throw new Error(`Failed to ensure role: ${roleError.message}`);
+  }
+
+  const { error: userError } = await supabaseAdmin
+    .from('users')
+    .upsert(
+      {
+        id: user.id,
+        name: fallbackNames[user.role] || user.email || user.id,
+        email: user.email || `${user.id}@colegio.edu`,
+        role: user.role,
+        active: true,
+        password: 'render-managed',
+        created_at: now,
+      },
+      { onConflict: 'id' }
+    );
+
+  if (userError) {
+    throw new Error(`Failed to ensure user: ${userError.message}`);
+  }
+}
+
 // ===================================================================
 // RUTAS DE CONSULTAS IA (RAG)
 // ===================================================================
@@ -49,6 +108,8 @@ router.post('/ask', requireAuth, async (req: AuthRequest, res: Response) => {
     if (!question || question.trim().length === 0) {
       return res.status(400).json({ error: 'Question is required' });
     }
+
+    await ensureSupabaseUser(user);
 
     // Procesar consulta
     const result = await processUserQuery(user.id, user.role, question, ipAddress);
@@ -108,6 +169,51 @@ router.get('/history', requireAuth, async (req: AuthRequest, res: Response) => {
     console.error('Error fetching query history:', error);
     res.status(500).json({
       error: 'Failed to fetch query history',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
+ * GET /api/policies/debug/knowledge - Diagnostico de la base de conocimiento
+ */
+router.get('/debug/knowledge', requireAuth, async (_req: AuthRequest, res: Response) => {
+  try {
+    const [documents, chunks, accessPolicies, roles] = await Promise.all([
+      supabaseClient.from('documents').select('id, name, status', { count: 'exact' }).limit(10),
+      supabaseClient.from('document_chunks').select('id, document_id', { count: 'exact' }).limit(10),
+      supabaseClient.from('document_access_policies').select('document_id, role_id, access_level', { count: 'exact' }).limit(10),
+      supabaseClient.from('role_permissions').select('role_id, can_ask_questions', { count: 'exact' }).limit(10),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        documents: {
+          count: documents.count || 0,
+          sample: documents.data || [],
+          error: documents.error?.message,
+        },
+        chunks: {
+          count: chunks.count || 0,
+          sample: chunks.data || [],
+          error: chunks.error?.message,
+        },
+        accessPolicies: {
+          count: accessPolicies.count || 0,
+          sample: accessPolicies.data || [],
+          error: accessPolicies.error?.message,
+        },
+        rolePermissions: {
+          count: roles.count || 0,
+          sample: roles.data || [],
+          error: roles.error?.message,
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to inspect knowledge base',
       details: error instanceof Error ? error.message : 'Unknown error',
     });
   }

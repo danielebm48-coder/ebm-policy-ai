@@ -1,7 +1,7 @@
-import dotenv from 'dotenv';
 import { Pool } from 'pg';
+import { loadEnv } from './config/env';
 
-dotenv.config();
+loadEnv();
 
 const connectionString = process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/school_policy_ai';
 export const pool = new Pool({ connectionString });

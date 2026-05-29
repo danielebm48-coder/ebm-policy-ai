@@ -1,12 +1,6 @@
-import dotenv from 'dotenv';
-import * as fs from 'fs';
-import * as path from 'path';
+import { loadEnv } from './config/env';
 
-const envPath = fs.existsSync(path.join(process.cwd(), '.env.development')) 
-  ? '.env.development' 
-  : '.env';
-
-dotenv.config({ path: envPath });
+loadEnv();
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';

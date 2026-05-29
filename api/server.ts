@@ -7,7 +7,7 @@ import { dirname } from 'path';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import { createSamplePolicies, listPolicies, findPolicyById, createPolicy, updatePolicy, searchPolicies, buildReferences } from '../src/services/policyService';
-import { createToken, loginUser } from '../src/services/authService';
+import { createToken, initAuth, loginUser } from '../src/services/authService';
 import { answerQuestion } from '../src/services/iaService';
 import { createQuery } from '../src/repositories/queryRepository';
 import { addAuditEntry } from '../src/repositories/auditRepository';
@@ -24,15 +24,33 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // API Routes
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'school-policy-ai',
+    time: new Date().toISOString(),
+  });
+});
+
 app.use('/api/policies', policiesRoutes);
 
 app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body;
-  const user = await loginUser(email, password);
-  if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
+  try {
+    await initAuth();
 
-  const token = createToken(user.id, user.role);
-  res.json({ token, user });
+    const { email, password } = req.body;
+    const user = await loginUser(email, password);
+    if (!user) return res.status(401).json({ error: 'Credenciales invalidas' });
+
+    const token = createToken(user.id, user.role);
+    res.json({ token, user });
+  } catch (error) {
+    console.error('[ERROR] Login failed:', error);
+    res.status(500).json({
+      error: 'No se pudo iniciar sesion',
+      details: error instanceof Error ? error.message : 'Error desconocido',
+    });
+  }
 });
 
 app.post('/api/query', async (req, res) => {

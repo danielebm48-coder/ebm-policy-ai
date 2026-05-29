@@ -1,13 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
-import * as fs from 'fs';
-import * as path from 'path';
+import { loadEnv } from './config/env';
 
-const envPath = fs.existsSync(path.join(process.cwd(), '.env.development')) 
-  ? '.env.development' 
-  : '.env';
-
-dotenv.config({ path: envPath });
+loadEnv();
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;

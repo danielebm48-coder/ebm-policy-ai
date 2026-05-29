@@ -53,6 +53,8 @@ export async function ensureSampleUsers(): Promise<void> {
     { id: 'u_system', name: 'Sistema', email: 'system@colegio.edu', role: 'admin' as UserRole, active: true, password: 'system2026' },
     { id: 'u_directivo', name: 'Directora Ana', email: 'ana@colegio.edu', role: 'directivo' as UserRole, active: true, password: 'directivo2026' },
     { id: 'u_profesor', name: 'Profesor Luis', email: 'luis@colegio.edu', role: 'profesor' as UserRole, active: true, password: 'profesor2026' },
+    { id: 'u_demo_profesor', name: 'Profesor Demo', email: 'demo@colegio.edu', role: 'profesor' as UserRole, active: true, password: 'demo2026' },
+    { id: 'u_profesor_demo', name: 'Profesor Demo Web', email: 'profesor.demo@colegio.edu', role: 'profesor' as UserRole, active: true, password: 'profesor2026' },
     { id: 'u_alumno', name: 'Alumno Mario', email: 'mario@colegio.edu', role: 'alumno' as UserRole, active: true, password: 'alumno2026' },
     { id: 'u_padre', name: 'Padre Carmen', email: 'carmen@colegio.edu', role: 'padre' as UserRole, active: true, password: 'padre2026' },
   ];
@@ -61,7 +63,12 @@ export async function ensureSampleUsers(): Promise<void> {
     await pool.query(
       `INSERT INTO users (id, name, email, role, active, password, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (id) DO NOTHING`,
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name,
+         email = EXCLUDED.email,
+         role = EXCLUDED.role,
+         active = EXCLUDED.active,
+         password = EXCLUDED.password`,
       [user.id, user.name, user.email.toLowerCase(), user.role, user.active, user.password, new Date().toISOString()],
     );
   }

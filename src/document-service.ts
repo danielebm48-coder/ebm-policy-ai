@@ -264,7 +264,19 @@ export async function checkDocumentAccess(
       .single();
 
     if (error || !data) {
-      return false;
+      const { data: rolePermissions, error: roleError } = await supabaseClient
+        .from('role_permissions')
+        .select('can_ask_questions, can_search, can_view')
+        .eq('role_id', roleId)
+        .single();
+
+      if (roleError || !rolePermissions) {
+        return false;
+      }
+
+      if (requiredAccess === 'ask') return !!rolePermissions.can_ask_questions;
+      if (requiredAccess === 'search') return !!rolePermissions.can_search;
+      return !!rolePermissions.can_view;
     }
 
     const accessLevels = ['view', 'search', 'ask'];

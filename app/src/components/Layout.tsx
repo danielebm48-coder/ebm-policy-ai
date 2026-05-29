@@ -11,6 +11,7 @@ const Layout: React.FC<LayoutProps> = ({ children, role, title }) => {
   const navigate = useNavigate();
 
   const handleLogout = () => {
+    localStorage.removeItem('schoolPolicyAuth');
     navigate('/login');
   };
 

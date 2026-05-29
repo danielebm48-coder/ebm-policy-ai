@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
+
+declare const __API_BASE_URL__: string;
 
 interface Message {
   id: string;
@@ -12,10 +14,25 @@ interface Message {
 
 const RoleDashboard: React.FC = () => {
   const { role } = useParams<{ role: string }>();
+  const navigate = useNavigate();
+  const storedAuth = localStorage.getItem('schoolPolicyAuth');
+  const auth = storedAuth ? JSON.parse(storedAuth) : null;
+  const normalizedRole = auth?.user?.role || role || 'profesor';
+  const apiBaseUrl = (__API_BASE_URL__ || '').replace(/\/$/, '');
+  const roleProfiles: Record<string, { userId: string; email: string }> = {
+    admin: { userId: 'u_system', email: 'system@colegio.edu' },
+    directivo: { userId: 'u_directivo', email: 'ana@colegio.edu' },
+    profesor: { userId: 'u_profesor', email: 'luis@colegio.edu' },
+    alumno: { userId: 'u_alumno', email: 'mario@colegio.edu' },
+    padre: { userId: 'u_padre', email: 'carmen@colegio.edu' },
+  };
+  const currentProfile = auth?.user
+    ? { userId: auth.user.id, email: auth.user.email }
+    : roleProfiles[normalizedRole] || roleProfiles.profesor;
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: `¡Hola! Soy tu Asistente de Políticas Escolares. Como ${role}, ¿en qué puedo ayudarte hoy respecto a la normativa?`,
+      text: `¡Hola! Soy tu Asistente de Políticas Escolares. Como ${normalizedRole}, ¿en qué puedo ayudarte hoy respecto a la normativa?`,
       sender: 'ai',
       timestamp: new Date()
     }
@@ -29,8 +46,18 @@ const RoleDashboard: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!auth?.token || !auth?.user) {
+      navigate('/login', { replace: true });
+      return;
+    }
+
+    if (role && role !== auth.user.role) {
+      navigate(`/dashboard/${auth.user.role}`, { replace: true });
+      return;
+    }
+
     scrollToBottom();
-  }, [messages, isTyping]);
+  }, [messages, isTyping, auth?.token, auth?.user, navigate, role]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,13 +77,13 @@ const RoleDashboard: React.FC = () => {
 
     try {
       // Llamada real al backend de E.B. Maquilishuat
-      const response = await fetch('/api/policies/ask', {
+      const response = await fetch(`${apiBaseUrl}/api/policies/ask`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'x-user-id': 'u_test_user',
-          'x-user-role': role || 'profesor',
-          'x-user-email': `${role}@escuela.com`
+          'x-user-id': currentProfile.userId,
+          'x-user-role': normalizedRole,
+          'x-user-email': currentProfile.email
         },
         body: JSON.stringify({
           question: currentQuery

@@ -1,29 +1,50 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+declare const __API_BASE_URL__: string;
+
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
+  const apiBaseUrl = (__API_BASE_URL__ || '').replace(/\/$/, '');
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!email || !password) {
       setError('Por favor, completa todos los campos.');
       return;
     }
-    const normalized = email.toLowerCase();
-    if (normalized.includes('directivo')) {
-      navigate('/admin');
-    } else if (normalized.includes('profesor')) {
-      navigate('/dashboard/profesor');
-    } else if (normalized.includes('alumno')) {
-      navigate('/dashboard/alumno');
-    } else if (normalized.includes('padre')) {
-      navigate('/dashboard/padre');
-    } else {
-      setError('Usuario no reconocido. Prueba con "directivo", "profesor", "alumno" o "padre" en el correo.');
+
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Credenciales invalidas');
+      }
+
+      localStorage.setItem('schoolPolicyAuth', JSON.stringify(data));
+
+      if (data.user.role === 'admin' || data.user.role === 'directivo') {
+        navigate('/admin');
+      } else {
+        navigate(`/dashboard/${data.user.role}`);
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'No se pudo iniciar sesion.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -108,6 +129,7 @@ const LoginPage: React.FC = () => {
 
           <button 
             type="submit" 
+            disabled={isSubmitting}
             style={{ 
               width: '100%', 
               padding: '0.875rem', 
@@ -117,16 +139,17 @@ const LoginPage: React.FC = () => {
               borderRadius: 'var(--radius-md)',
               fontWeight: 600,
               fontSize: '1rem',
-              boxShadow: '0 4px 6px rgba(26, 95, 122, 0.2)'
+              boxShadow: '0 4px 6px rgba(26, 95, 122, 0.2)',
+              opacity: isSubmitting ? 0.7 : 1
             }}
           >
-            Iniciar Sesión
+            {isSubmitting ? 'Iniciando...' : 'Iniciar Sesión'}
           </button>
         </form>
         
         <div style={{ marginTop: '2rem', textAlign: 'center', fontSize: '0.8125rem', color: '#94a3b8' }}>
-          Para este prototipo, usa correos que contengan:<br/>
-          <strong>directivo, profesor, alumno, padre</strong>
+          Usuario de prueba:<br/>
+          <strong>profesor.demo@colegio.edu / profesor2026</strong>
         </div>
       </div>
     </div>
