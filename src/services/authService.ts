@@ -157,18 +157,25 @@ export async function registerUser(userData: {
       password: userData.password,
     });
 
-    // 5. Si es alumno, marcar código como usado
-    if (userData.role === 'alumno' && userData.studentCode) {
-      await useStudentCode(userData.studentCode, normalizedEmail);
-    }
+    try {
+      // 5. Si es alumno, marcar código como usado
+      if (userData.role === 'alumno' && userData.studentCode) {
+        await useStudentCode(userData.studentCode, normalizedEmail);
+      }
 
-    // 6. Si requiere aprobación, crear registro de solicitud
-    if (requiresApproval) {
-      await createPendingApproval(userId, userData.role);
-      return { user: newUser, pendingApproval: true };
-    }
+      // 6. Si requiere aprobación, crear registro de solicitud
+      if (requiresApproval) {
+        await createPendingApproval(userId, userData.role);
+        return { user: newUser, pendingApproval: true };
+      }
 
-    return { user: newUser };
+      return { user: newUser };
+    } catch (innerError) {
+      // Si falla algo despues de crear el usuario (ej: falla la solicitud de aprobacion)
+      // Borramos el usuario para que no quede "en el limbo" y pueda reintentar.
+      await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+      throw innerError;
+    }
   } catch (error) {
     console.error('Registration error:', error);
     return { error: 'Error al procesar el registro.' };
