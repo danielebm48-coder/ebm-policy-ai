@@ -26,6 +26,7 @@ import {
 import { answerQuestion } from '../src/services/iaService';
 import { createQuery } from '../src/repositories/queryRepository';
 import { addAuditEntry } from '../src/repositories/auditRepository';
+import { initDb } from '../src/db';
 import policiesRoutes from './policies-routes';
 
 const app = express();
@@ -189,6 +190,14 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 async function start(): Promise<void> {
+  // Inicializar base de datos
+  try {
+    await initDb();
+    console.log('[SERVER] Database initialized');
+  } catch (dbError) {
+    console.warn('[SERVER] Database initialization failed (might already exist):', dbError instanceof Error ? dbError.message : dbError);
+  }
+
   const server = app.listen(finalPort, '0.0.0.0', () => {
     const address = server.address();
     const actualPort = typeof address === 'string' ? address : address?.port;
