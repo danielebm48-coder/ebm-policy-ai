@@ -37,6 +37,14 @@ interface QueryStatistics {
   most_consulted: Array<{ id: string; name: string; count: number }>;
 }
 
+interface Message {
+  id: string;
+  text: string;
+  sender: 'user' | 'ai';
+  reference?: string;
+  timestamp: Date;
+}
+
 const typeLabels: Record<DocumentType, string> = {
   policy: 'Politica',
   manual: 'Manual',
@@ -87,6 +95,11 @@ const AdminPanel: React.FC = () => {
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
   const [isLoadingApprovals, setIsLoadingApprovals] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatTyping, setIsChatTyping] = useState(false);
+  const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<'docs' | 'chat'>('docs');
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -297,7 +310,76 @@ const AdminPanel: React.FC = () => {
     loadRecommendations();
     loadInsights();
     loadApprovals();
+
+    // Inicializar chat si no hay mensajes
+    if (messages.length === 0) {
+      setMessages([{
+        id: '1',
+        text: `Hola ${auth?.user?.name || 'Administrador'}, soy tu asistente de IA. ¿Qué política o normativa deseas consultar hoy?`,
+        sender: 'ai',
+        timestamp: new Date()
+      }]);
+    }
   }, [apiBaseUrl, authHeaders, auth?.user?.id, role]);
+
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isChatTyping]);
+
+  const handleChatSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || isChatTyping) return;
+
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      text: chatInput,
+      sender: 'user',
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMsg]);
+    const question = chatInput;
+    setChatInput('');
+    setIsChatTyping(true);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/policies/ask`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': auth?.user?.id || 'u_admin',
+          'x-user-role': role || 'admin',
+          'x-user-email': auth?.user?.email || ''
+        },
+        body: JSON.stringify({ question })
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Error al consultar IA');
+
+      const result = data.data;
+      const aiMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        text: result.answer,
+        sender: 'ai',
+        reference: result.sourceDocuments?.length > 0 ? `Fuentes: ${result.sourceDocuments.join(', ')}` : undefined,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, aiMsg]);
+    } catch (error) {
+      console.error('Chat error:', error);
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        text: 'Lo siento, hubo un error al procesar tu consulta. Inténtalo de nuevo.',
+        sender: 'ai',
+        timestamp: new Date()
+      }]);
+    } finally {
+      setIsChatTyping(false);
+    }
+  };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -563,6 +645,7 @@ const AdminPanel: React.FC = () => {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(300px, 1fr)', gap: '1.5rem' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {/* ... approvals section stays at the top ... */}
           {role === 'directivo' && pendingApprovals.length > 0 && (
             <section style={{ backgroundColor: '#fff7ed', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid #fed7aa' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -601,96 +684,175 @@ const AdminPanel: React.FC = () => {
             </section>
           )}
 
-          <section>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
-              <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Gestion de Politicas</h2>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <button
-                  onClick={loadDocuments}
-                  style={{ backgroundColor: 'var(--white)', color: 'var(--primary-blue)', border: '1px solid var(--primary-blue)', padding: '0.55rem 0.9rem', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.875rem' }}
-                >
-                  Actualizar
-                </button>
-                <button
-                  onClick={openCreateModal}
-                  style={{ backgroundColor: 'var(--action-green)', color: 'var(--white)', border: 'none', padding: '0.55rem 1rem', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.875rem' }}
-                >
-                  + Cargar Documento
-                </button>
+          {/* TABS NAVIGATION */}
+          <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--nickel-medium)', marginBottom: '0.5rem' }}>
+            <button 
+              onClick={() => setActiveTab('docs')}
+              style={{ 
+                padding: '0.75rem 1.5rem', 
+                backgroundColor: 'transparent', 
+                border: 'none', 
+                borderBottom: activeTab === 'docs' ? '3px solid var(--primary-blue)' : '3px solid transparent',
+                color: activeTab === 'docs' ? 'var(--primary-blue)' : '#64748b',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              Gestión de Documentos
+            </button>
+            <button 
+              onClick={() => setActiveTab('chat')}
+              style={{ 
+                padding: '0.75rem 1.5rem', 
+                backgroundColor: 'transparent', 
+                border: 'none', 
+                borderBottom: activeTab === 'chat' ? '3px solid var(--primary-blue)' : '3px solid transparent',
+                color: activeTab === 'chat' ? 'var(--primary-blue)' : '#64748b',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              Chat de Consulta IA
+            </button>
+          </div>
+
+          {activeTab === 'docs' ? (
+            <section>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Listado de Políticas</h2>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <button
+                    onClick={loadDocuments}
+                    style={{ backgroundColor: 'var(--white)', color: 'var(--primary-blue)', border: '1px solid var(--primary-blue)', padding: '0.55rem 0.9rem', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.875rem' }}
+                  >
+                    Actualizar
+                  </button>
+                  <button
+                    onClick={openCreateModal}
+                    style={{ backgroundColor: 'var(--action-green)', color: 'var(--white)', border: 'none', padding: '0.55rem 1rem', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.875rem' }}
+                  >
+                    + Cargar Documento
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div style={{ backgroundColor: 'var(--white)', borderRadius: 'var(--radius-md)', border: '1px solid var(--nickel-medium)', overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead style={{ backgroundColor: 'var(--nickel-light)', fontSize: '0.8125rem' }}>
-                  <tr>
-                    <th style={{ padding: '0.85rem' }}>Titulo</th>
-                    <th style={{ padding: '0.85rem' }}>Tipo</th>
-                    <th style={{ padding: '0.85rem' }}>Estado</th>
-                    <th style={{ padding: '0.85rem' }}>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody style={{ fontSize: '0.875rem' }}>
-                  {documents.length === 0 && (
+              <div style={{ backgroundColor: 'var(--white)', borderRadius: 'var(--radius-md)', border: '1px solid var(--nickel-medium)', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  {/* ... table content stays same ... */}
+                  <thead style={{ backgroundColor: 'var(--nickel-light)', fontSize: '0.8125rem' }}>
                     <tr>
-                      <td colSpan={4} style={{ padding: '1rem', color: '#64748b' }}>
-                        {isLoadingDocuments ? 'Cargando documentos...' : 'No hay documentos visibles para este rol.'}
-                      </td>
+                      <th style={{ padding: '0.85rem' }}>Titulo</th>
+                      <th style={{ padding: '0.85rem' }}>Tipo</th>
+                      <th style={{ padding: '0.85rem' }}>Estado</th>
+                      <th style={{ padding: '0.85rem' }}>Acciones</th>
                     </tr>
-                  )}
-                  {documents.filter(d => d.status !== 'archived').map((document) => (
-                    <tr key={document.id} style={{ borderBottom: '1px solid var(--nickel-light)' }}>
-                      <td style={{ padding: '0.85rem', fontWeight: 600 }}>{document.name}</td>
-                      <td style={{ padding: '0.85rem' }}>{typeLabels[document.type] || document.type}</td>
-                      <td style={{ padding: '0.85rem' }}>
-                        <select 
-                          value={document.status} 
-                          onChange={(e) => changeStatus(document.id, e.target.value)}
-                          disabled={busyDocumentId === document.id}
-                          style={{ 
-                            padding: '0.2rem 0.4rem', 
-                            borderRadius: '4px', 
-                            fontSize: '0.75rem', 
-                            backgroundColor: statusColors[document.status], 
-                            color: statusTextColors[document.status], 
-                            border: `1px solid ${statusTextColors[document.status]}44`,
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <option value="draft">Borrador</option>
-                          <option value="review">En Revision</option>
-                          <option value="active">Cargado</option>
-                        </select>
-                      </td>
-                      <td style={{ padding: '0.85rem' }}>
-                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(document.id)}
+                  </thead>
+                  <tbody style={{ fontSize: '0.875rem' }}>
+                    {documents.length === 0 && (
+                      <tr>
+                        <td colSpan={4} style={{ padding: '1rem', color: '#64748b' }}>
+                          {isLoadingDocuments ? 'Cargando documentos...' : 'No hay documentos visibles para este rol.'}
+                        </td>
+                      </tr>
+                    )}
+                    {documents.filter(d => d.status !== 'archived').map((document) => (
+                      <tr key={document.id} style={{ borderBottom: '1px solid var(--nickel-light)' }}>
+                        <td style={{ padding: '0.85rem', fontWeight: 600 }}>{document.name}</td>
+                        <td style={{ padding: '0.85rem' }}>{typeLabels[document.type] || document.type}</td>
+                        <td style={{ padding: '0.85rem' }}>
+                          <select 
+                            value={document.status} 
+                            onChange={(e) => changeStatus(document.id, e.target.value)}
                             disabled={busyDocumentId === document.id}
-                            style={{ backgroundColor: 'var(--white)', color: 'var(--primary-blue)', border: '1px solid var(--primary-blue)', padding: '0.35rem 0.55rem', borderRadius: 'var(--radius-md)', fontSize: '0.75rem', fontWeight: 600, opacity: busyDocumentId === document.id ? 0.65 : 1 }}
+                            style={{ 
+                              padding: '0.2rem 0.4rem', 
+                              borderRadius: '4px', 
+                              fontSize: '0.75rem', 
+                              backgroundColor: statusColors[document.status], 
+                              color: statusTextColors[document.status], 
+                              border: `1px solid ${statusTextColors[document.status]}44`,
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
                           >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteDocument(document.id)}
-                            disabled={busyDocumentId === document.id}
-                            style={{ backgroundColor: 'var(--white)', color: '#ef4444', border: '1px solid #ef4444', padding: '0.35rem 0.55rem', borderRadius: 'var(--radius-md)', fontSize: '0.75rem', fontWeight: 600, opacity: busyDocumentId === document.id ? 0.65 : 1 }}
-                          >
-                            Eliminar
-                          </button>
+                            <option value="draft">Borrador</option>
+                            <option value="review">En Revision</option>
+                            <option value="active">Cargado</option>
+                          </select>
+                        </td>
+                        <td style={{ padding: '0.85rem' }}>
+                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(document.id)}
+                              disabled={busyDocumentId === document.id}
+                              style={{ backgroundColor: 'var(--white)', color: 'var(--primary-blue)', border: '1px solid var(--primary-blue)', padding: '0.35rem 0.55rem', borderRadius: 'var(--radius-md)', fontSize: '0.75rem', fontWeight: 600, opacity: busyDocumentId === document.id ? 0.65 : 1 }}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteDocument(document.id)}
+                              disabled={busyDocumentId === document.id}
+                              style={{ backgroundColor: 'var(--white)', color: '#ef4444', border: '1px solid #ef4444', padding: '0.35rem 0.55rem', borderRadius: 'var(--radius-md)', fontSize: '0.75rem', fontWeight: 600, opacity: busyDocumentId === document.id ? 0.65 : 1 }}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : (
+            /* CHAT INTERFACE TAB */
+            <section style={{ display: 'flex', flexDirection: 'column', height: '600px', backgroundColor: 'var(--white)', borderRadius: 'var(--radius-md)', border: '1px solid var(--nickel-medium)', overflow: 'hidden' }}>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', backgroundColor: '#f8fafc' }}>
+                {messages.map((msg) => (
+                  <div key={msg.id} style={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                    <div style={{ 
+                      padding: '0.75rem 1rem', 
+                      borderRadius: '12px', 
+                      backgroundColor: msg.sender === 'user' ? 'var(--primary-blue)' : 'var(--white)',
+                      color: msg.sender === 'user' ? 'white' : 'var(--text-dark)',
+                      boxShadow: 'var(--shadow-sm)',
+                      border: msg.sender === 'user' ? 'none' : '1px solid var(--nickel-medium)',
+                      fontSize: '0.9rem'
+                    }}>
+                      {msg.text}
+                      {msg.reference && (
+                        <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(0,0,0,0.1)', fontSize: '0.75rem', fontWeight: 600 }}>
+                          {msg.reference}
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {isChatTyping && (
+                  <div style={{ alignSelf: 'flex-start', color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                    La IA está respondiendo...
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+              <form onSubmit={handleChatSend} style={{ padding: '1rem', borderTop: '1px solid var(--nickel-medium)', display: 'flex', gap: '0.5rem' }}>
+                <input 
+                  type="text" 
+                  value={chatInput} 
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Realiza una consulta interna sobre las políticas..."
+                  style={{ flex: 1, borderRadius: 'var(--radius-md)', border: '1px solid var(--nickel-medium)', padding: '0.6rem' }}
+                />
+                <button type="submit" disabled={isChatTyping} style={{ backgroundColor: 'var(--action-green)', color: 'white', border: 'none', padding: '0 1.25rem', borderRadius: 'var(--radius-md)', fontWeight: 600 }}>
+                  Enviar
+                </button>
+              </form>
+            </section>
+          )}
 
-          <section>
+          <section style={{ marginTop: '0.5rem' }}>
             <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Sugerencias de la IA para Documentacion</h2>
             <div style={{ 
               padding: '1.25rem', 

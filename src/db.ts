@@ -7,6 +7,9 @@ const connectionString = process.env.DATABASE_URL ?? 'postgresql://postgres:post
 export const pool = new Pool({ connectionString });
 
 export async function initDb(): Promise<void> {
+  // Asegurar que la extension para UUID este habilitada
+  await pool.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";');
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
