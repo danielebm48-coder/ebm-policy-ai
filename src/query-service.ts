@@ -99,16 +99,12 @@ async function findKeywordChunks(
 
   const documentIds = [...new Set((accessRows || []).map((row: any) => row.document_id))];
   if (documentIds.length === 0) {
-    const { data: activeDocuments, error: docsError } = await db
+    // Si no hay politicas definidas, buscar en documentos activos por defecto
+    const { data: activeDocuments } = await db
       .from('documents')
       .select('id')
       .eq('status', 'active')
       .limit(50);
-
-    if (docsError) {
-      console.warn('Error fetching active documents for fallback:', docsError);
-    }
-
     documentIds.push(...[...new Set((activeDocuments || []).map((row: any) => row.id))]);
   }
 
@@ -120,82 +116,46 @@ async function findKeywordChunks(
     .from('document_chunks')
     .select('id, document_id, text, chunk_number')
     .in('document_id', documentIds)
-    .limit(80);
+    .limit(100);
 
-  if (chunksError) {
-    console.warn('Error fetching fallback chunks:', chunksError);
-    return [];
-  }
+  if (chunksError) return [];
 
   const tokens = tokenizeQuestion(question);
+  if (tokens.length === 0) return [];
+
   const scored = (chunks || [])
     .map((chunk: any) => {
       const normalizedText = String(chunk.text || '')
         .toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '');
+      
+      // Contar coincidencias exactas de palabras clave
       const hits = tokens.filter((token) => normalizedText.includes(token)).length;
+      const score = hits / tokens.length;
 
       return {
         id: chunk.id,
         document_id: chunk.document_id,
         text: chunk.text,
-        similarity: tokens.length > 0 ? hits / tokens.length : 0.1,
+        similarity: score,
       };
     })
-    .sort((a: ChunkWithSimilarity, b: ChunkWithSimilarity) => b.similarity - a.similarity);
+    .filter(chunk => chunk.similarity > 0.2) // Filtro de relevancia minima
+    .sort((a, b) => b.similarity - a.similarity);
 
-  const matches = scored.filter((chunk: ChunkWithSimilarity) => chunk.similarity > 0);
-  return (matches.length > 0 ? matches : scored).slice(0, limit);
-}
-
-function findBuiltInChunks(question: string, limit: number = 5): ChunkWithSimilarity[] {
-  const tokens = tokenizeQuestion(question);
-  const scored = BUILT_IN_CHUNKS.map((chunk) => {
-    const normalizedText = chunk.text
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-    const hits = tokens.filter((token) => normalizedText.includes(token)).length;
-
-    return {
-      ...chunk,
-      similarity: tokens.length > 0 ? hits / tokens.length : chunk.similarity,
-    };
-  }).sort((a, b) => b.similarity - a.similarity);
-
-  const matches = scored.filter((chunk) => chunk.similarity > 0);
-  return (matches.length > 0 ? matches : scored).slice(0, limit);
+  return scored.slice(0, limit);
 }
 
 function buildFallbackAnswer(question: string, chunks: ChunkWithSimilarity[]): string {
-  const context = chunks.map((chunk) => chunk.text).join('\n\n');
-  const tokens = tokenizeQuestion(question);
-  const sentences = context
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
+  if (chunks.length === 0 || !chunks.some(c => c.similarity > 0.3)) {
+    return "Lo siento, no he encontrado información específica en los documentos actuales que responda a tu pregunta. ¿Podrías ser más específico o indicarme sobre qué área (académica, convivencia, etc.) deseas consultar?";
+  }
 
-  const ranked = sentences
-    .map((sentence) => {
-      const normalized = sentence
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '');
-      const score = tokens.filter((token) => normalized.includes(token)).length;
-      return { sentence, score };
-    })
-    .sort((a, b) => b.score - a.score);
-
-  const selected = ranked
-    .filter((item) => item.score > 0)
-    .slice(0, 4)
-    .map((item) => item.sentence);
-
-  const answerSentences = selected.length > 0 ? selected : sentences.slice(0, 4);
   const sources = [...new Set(chunks.map((chunk) => chunk.document_id))].join(', ');
+  return `He encontrado algunas menciones relacionadas en los documentos (${sources}), pero no una respuesta exacta. 
 
-  return `Segun las politicas disponibles: ${answerSentences.join(' ')}\n\nFuente: ${sources || 'base de conocimiento escolar'}.`;
+Por favor, verifica si tu consulta se refiere a uno de estos temas o intenta reformularla para ser más preciso. ¿Hay algún documento en particular que te gustaría que revise?`;
 }
 
 /**
