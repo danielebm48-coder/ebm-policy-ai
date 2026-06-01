@@ -9,6 +9,7 @@ const RegisterPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('padre');
   const [studentCode, setStudentCode] = useState('');
+  const [adminCode, setAdminCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -29,6 +30,11 @@ const RegisterPage: React.FC = () => {
       return;
     }
 
+    if (role === 'admin' && !adminCode) {
+      setError('El código de autorización de administrador es obligatorio.');
+      return;
+    }
+
     setError(null);
     setIsSubmitting(true);
 
@@ -36,7 +42,7 @@ const RegisterPage: React.FC = () => {
       const response = await fetch(`${apiBaseUrl}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, role, studentCode }),
+        body: JSON.stringify({ name, email, password, role, studentCode, adminCode }),
       });
 
       const data = await response.json();
@@ -130,6 +136,7 @@ const RegisterPage: React.FC = () => {
               <option value="padre">Padre de Familia</option>
               <option value="alumno">Alumno</option>
               <option value="profesor">Profesor</option>
+              <option value="admin">Administrador</option>
               <option value="directivo">Directivo / Rectoría</option>
             </select>
           </div>
@@ -144,6 +151,21 @@ const RegisterPage: React.FC = () => {
                 value={studentCode} 
                 onChange={(e) => setStudentCode(e.target.value)} 
                 placeholder="EBM-2026-XXX"
+                style={{ width: '100%' }} 
+              />
+            </div>
+          )}
+
+          {role === 'admin' && (
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 600 }}>
+                Código de Autorización de Administrador
+              </label>
+              <input 
+                type="password"
+                value={adminCode} 
+                onChange={(e) => setAdminCode(e.target.value)} 
+                placeholder="Código secreto proporcionado por el colegio"
                 style={{ width: '100%' }} 
               />
             </div>

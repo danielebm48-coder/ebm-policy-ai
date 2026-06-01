@@ -55,9 +55,9 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { name, email, password, role, studentCode } = req.body;
+    const { name, email, password, role, studentCode, adminCode } = req.body;
     
-    const result = await registerUser({ name, email, password, role, studentCode });
+    const result = await registerUser({ name, email, password, role, studentCode, adminCode });
     
     if (result.error) {
       return res.status(400).json({ error: result.error });

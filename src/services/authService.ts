@@ -82,14 +82,38 @@ export async function registerUser(userData: {
   password: string;
   role: UserRole;
   studentCode?: string;
+  adminCode?: string; // Nuevo campo para autorización de admin
 }): Promise<{ user?: UserProfile; error?: string }> {
   const normalizedEmail = userData.email.trim().toLowerCase();
   
   // 1. Validaciones por Rol
-  if (['profesor', 'admin', 'directivo'].includes(userData.role)) {
+  
+  // RESTRICCIÓN DE DIRECTORES: Solo 3 correos específicos pueden ser directivos
+  const authorizedDirectors = ['dguzman@ebm.edu.sv', 'enadeh@ebm.edu.sv', 'juriarte@ebm.edu.sv'];
+  if (userData.role === 'directivo') {
+    if (!authorizedDirectors.includes(normalizedEmail)) {
+      return { error: 'Este correo no está autorizado como Directivo. Por favor use el rol de Profesor o contacte a sistemas.' };
+    }
+  }
+
+  // RESTRICCIÓN DE ADMINISTRADORES: Requiere un código secreto especial
+  // En una fase posterior este código se validará contra base de datos, por ahora usamos uno secreto
+  const SECRET_ADMIN_AUTH_CODE = 'EBM-ADMIN-2026-X';
+  if (userData.role === 'admin') {
+    if (userData.adminCode !== SECRET_ADMIN_AUTH_CODE) {
+      return { error: 'El código de autorización de Administrador es incorrecto.' };
+    }
+    if (!normalizedEmail.endsWith('@ebm.edu.sv')) {
+      return { error: 'Los administradores deben usar correo @ebm.edu.sv' };
+    }
+  }
+
+  if (userData.role === 'profesor') {
     if (!normalizedEmail.endsWith('@ebm.edu.sv')) {
       return { error: 'Este rol requiere un correo institucional @ebm.edu.sv' };
     }
+    // Evitar que un directivo se registre como profesor si ya existe como tal,
+    // o simplemente asegurar que los profesores no tengan privilegios extra.
   }
 
   if (userData.role === 'alumno') {
