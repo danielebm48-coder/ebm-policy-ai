@@ -31,6 +31,8 @@
     "@types/cors": "*",
     "@types/express": "*",
     "@types/node": "*",
+    "@types/pdf-parse": "^1.1.4",
+    "@types/mammoth": "^1.1.2",
     "@types/pg": "*",
     "@types/react": "*",
     "@types/react-dom": "*",

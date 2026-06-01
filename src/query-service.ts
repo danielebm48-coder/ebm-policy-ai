@@ -592,3 +592,51 @@ Proporciona un resumen ejecutivo para la direccion sobre:
     throw error;
   }
 }
+
+/**
+ * Generar recomendaciones de nuevas politicas basadas en consultas sin respuesta
+ */
+export async function getIARecommendations(): Promise<any> {
+  if (!supabaseAdmin) {
+    throw new Error('Admin client not configured');
+  }
+
+  try {
+    const { data: unanswered } = await supabaseAdmin
+      .from('ai_queries')
+      .select('question')
+      .eq('error_message', 'NO_DOCUMENT_MATCH')
+      .limit(50);
+
+    if (!unanswered || unanswered.length === 0) {
+      return { 
+        recommendations: 'No hay suficientes consultas sin respuesta para generar recomendaciones.',
+        priority_topics: [] 
+      };
+    }
+
+    const questions = unanswered.map(q => q.question).join('\n- ');
+    const prompt = `Basado en las siguientes preguntas de la comunidad escolar que NO pudieron ser respondidas por falta de informacion en los documentos actuales:
+    
+- ${questions}
+
+Proporciona:
+1. Una lista de 3 a 5 temas prioritarios que requieren la creacion de nuevas politicas o normativas.
+2. Una breve justificacion de por que cada tema es importante segun la demanda de los usuarios.
+3. Sugerencias de que puntos clave deberian incluir estas nuevas politicas.`;
+
+    const result = await generateResponse(
+      prompt,
+      [],
+      'Eres un experto en gestion escolar y desarrollo organizacional.'
+    );
+
+    return {
+      recommendations: result.answer,
+      total_unanswered: unanswered.length
+    };
+  } catch (error) {
+    console.error('Error in IA recommendations:', error);
+    throw error;
+  }
+}
