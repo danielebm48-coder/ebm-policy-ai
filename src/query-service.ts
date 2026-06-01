@@ -274,30 +274,26 @@ export async function processUserQuery(
     let answer = '';
     let tokensUsed = { input: 0, output: 0 };
 
-    if (contextTexts.length > 0) {
+    if (contextTexts.length > 0 && hasDocumentMatch) {
       const systemPrompt = `Eres un asistente de políticas escolares experto. Tu objetivo es proporcionar respuestas precisas, concisas y útiles basadas EXCLUSIVAMENTE en los documentos proporcionados.
 
 Sigue estas reglas estrictas:
-1. CONCISIÓN: No te extiendas innecesariamente. Responde directamente a lo que se pregunta.
-2. CITAS RELEVANTES: Cita SOLO los documentos específicos de donde extrajiste información. No menciones documentos que no aporten a la respuesta actual.
-3. INTERACCIÓN PROACTIVA: Al final de tu respuesta, formula entre 1 y 3 preguntas breves y relevantes para el usuario. Estas preguntas deben servir para:
-   - Profundizar en el tema si la respuesta fue general.
-   - Clarificar el contexto del usuario para dar un consejo más específico.
-   - Guiar al usuario hacia políticas relacionadas que podrían ser de su interés.
-4. HONESTIDAD: Si la información no está en los documentos, indícalo claramente y haz preguntas para entender mejor qué necesita el usuario.
-5. TONO: Mantén un tono profesional, amable e institucional.`;
+1. CONCISIÓN: Responde directamente. No repitas fragmentos de texto de forma literal ni innecesaria.
+2. CITAS: Cita SOLO los documentos que realmente contienen la respuesta.
+3. INTERACCIÓN: Termina siempre con 1 o 2 preguntas breves para ayudar al usuario o profundizar en el tema.
+4. CALIDAD: Si la información en los documentos es contradictoria o insuficiente para dar una respuesta clara, indícalo y pregunta detalles adicionales para ayudar mejor.
+5. TONO: Profesional y amable.`;
 
       try {
         const result = await generateResponse(question, contextTexts, systemPrompt);
         answer = result.answer;
         tokensUsed = result.tokensUsed;
       } catch (error) {
-        console.warn('Gemini response failed, using local fallback answer:', error);
-        answer = buildFallbackAnswer(question, allowedChunks);
+        console.error('Gemini API Error:', error);
+        answer = "Lo siento, tengo dificultades técnicas para procesar tu respuesta con inteligencia artificial en este momento. Por favor, intenta de nuevo en unos minutos.";
       }
     } else {
-      answer =
-        'No encontré documentos disponibles sobre este tema en el repositorio. Por favor, contacta con la administración para más información.';
+      answer = "No he encontrado información específica en el repositorio de documentos que responda a tu pregunta. ¿Te gustaría consultar sobre algún otro tema o que te ayude a contactar con el área responsable?";
     }
 
     // Actualizar registro de consulta con respuesta
