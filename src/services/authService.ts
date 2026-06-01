@@ -1,4 +1,15 @@
-import { getUserByEmail, ensureSampleUsers, UserWithPassword, createUser, verifyStudentCode, useStudentCode } from '../repositories/userRepository';
+import { 
+  getUserByEmail, 
+  ensureSampleUsers, 
+  UserWithPassword, 
+  createUser, 
+  verifyStudentCode, 
+  useStudentCode,
+  createPendingApproval,
+  getPendingApprovals,
+  updateApprovalStatus,
+  setUserActiveStatus
+} from '../repositories/userRepository';
 import { UserProfile, UserRole } from '../models';
 
 const fallbackUsers: UserWithPassword[] = [
@@ -57,7 +68,7 @@ export async function initAuth(): Promise<void> {
   }
 }
 
-export async function loginUser(email: string, password: string): Promise<UserProfile | null> {
+export async function loginUser(email: string, password: string): Promise<{ user?: UserProfile; error?: string } | null> {
   let user: UserWithPassword | null = null;
   const normalizedEmail = email.trim().toLowerCase();
 
@@ -71,9 +82,14 @@ export async function loginUser(email: string, password: string): Promise<UserPr
     user = fallbackUsers.find((candidate) => candidate.email === normalizedEmail) || null;
   }
 
-  if (!user || !user.active || user.password !== password) return null;
+  if (!user || user.password !== password) return null;
+  
+  if (!user.active) {
+    return { error: 'Tu cuenta está pendiente de aprobación por un Directivo. Por favor, espera a que validen tu acceso.' };
+  }
+
   const { password: _, ...profile } = user;
-  return profile;
+  return { user: profile };
 }
 
 export async function registerUser(userData: {
@@ -82,27 +98,18 @@ export async function registerUser(userData: {
   password: string;
   role: UserRole;
   studentCode?: string;
-  adminCode?: string; // Nuevo campo para autorización de admin
-}): Promise<{ user?: UserProfile; error?: string }> {
+}): Promise<{ user?: UserProfile; error?: string; pendingApproval?: boolean }> {
   const normalizedEmail = userData.email.trim().toLowerCase();
   
   // 1. Validaciones por Rol
-  
-  // RESTRICCIÓN DE DIRECTORES: Solo 3 correos específicos pueden ser directivos
   const authorizedDirectors = ['dguzman@ebm.edu.sv', 'enadeh@ebm.edu.sv', 'juriarte@ebm.edu.sv'];
   if (userData.role === 'directivo') {
     if (!authorizedDirectors.includes(normalizedEmail)) {
-      return { error: 'Este correo no está autorizado como Directivo. Por favor use el rol de Profesor o contacte a sistemas.' };
+      return { error: 'Este correo no está autorizado como Directivo.' };
     }
   }
 
-  // RESTRICCIÓN DE ADMINISTRADORES: Requiere un código secreto especial
-  // En una fase posterior este código se validará contra base de datos, por ahora usamos uno secreto
-  const SECRET_ADMIN_AUTH_CODE = 'EBM-ADMIN-2026-X';
   if (userData.role === 'admin') {
-    if (userData.adminCode !== SECRET_ADMIN_AUTH_CODE) {
-      return { error: 'El código de autorización de Administrador es incorrecto.' };
-    }
     if (!normalizedEmail.endsWith('@ebm.edu.sv')) {
       return { error: 'Los administradores deben usar correo @ebm.edu.sv' };
     }
@@ -112,8 +119,6 @@ export async function registerUser(userData: {
     if (!normalizedEmail.endsWith('@ebm.edu.sv')) {
       return { error: 'Este rol requiere un correo institucional @ebm.edu.sv' };
     }
-    // Evitar que un directivo se registre como profesor si ya existe como tal,
-    // o simplemente asegurar que los profesores no tengan privilegios extra.
   }
 
   if (userData.role === 'alumno') {
@@ -135,20 +140,32 @@ export async function registerUser(userData: {
     return { error: 'El correo electrónico ya está registrado.' };
   }
 
-  // 3. Crear el usuario
+  // 3. Determinar si requiere aprobación
+  // Los administradores nuevos se crean inactivos y requieren aprobación
+  const requiresApproval = userData.role === 'admin';
+  const isActive = !requiresApproval;
+
+  // 4. Crear el usuario
   try {
+    const userId = `u_${Math.random().toString(36).substring(2, 10)}`;
     const newUser = await createUser({
-      id: `u_${Math.random().toString(36).substring(2, 10)}`,
+      id: userId,
       name: userData.name,
       email: normalizedEmail,
       role: userData.role,
-      active: true,
+      active: isActive,
       password: userData.password,
     });
 
-    // 4. Si es alumno, marcar código como usado
+    // 5. Si es alumno, marcar código como usado
     if (userData.role === 'alumno' && userData.studentCode) {
       await useStudentCode(userData.studentCode, normalizedEmail);
+    }
+
+    // 6. Si requiere aprobación, crear registro de solicitud
+    if (requiresApproval) {
+      await createPendingApproval(userId, userData.role);
+      return { user: newUser, pendingApproval: true };
     }
 
     return { user: newUser };
@@ -156,6 +173,22 @@ export async function registerUser(userData: {
     console.error('Registration error:', error);
     return { error: 'Error al procesar el registro.' };
   }
+}
+
+export async function listPendingApprovals(): Promise<any[]> {
+  return await getPendingApprovals();
+}
+
+export async function approveAdmin(approvalId: string, directorId: string): Promise<void> {
+  const userId = await updateApprovalStatus(approvalId, 'approved', directorId);
+  if (userId) {
+    await setUserActiveStatus(userId, true);
+  }
+}
+
+export async function rejectAdmin(approvalId: string, directorId: string): Promise<void> {
+  await updateApprovalStatus(approvalId, 'rejected', directorId);
+  // El usuario permanece inactivo
 }
 
 export function createToken(userId: string, role: UserRole): string {

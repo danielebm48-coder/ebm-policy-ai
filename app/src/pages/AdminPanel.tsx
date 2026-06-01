@@ -78,6 +78,7 @@ const AdminPanel: React.FC = () => {
   const [documents, setDocuments] = useState<PolicyDocument[]>([]);
   const [unansweredQueries, setUnansweredQueries] = useState<UnansweredQuery[]>([]);
   const [statistics, setStatistics] = useState<QueryStatistics | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
   const [recommendations, setRecommendations] = useState<string | null>(null);
   const [insights, setInsights] = useState<any | null>(null);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
@@ -85,6 +86,7 @@ const AdminPanel: React.FC = () => {
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+  const [isLoadingApprovals, setIsLoadingApprovals] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -241,12 +243,60 @@ const AdminPanel: React.FC = () => {
     }
   };
 
+  const loadApprovals = async () => {
+    if (role !== 'directivo') return;
+    setIsLoadingApprovals(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/auth/approvals`, {
+        headers: { ...authHeaders },
+      });
+      const data = await response.json();
+      if (response.ok) setPendingApprovals(data.data || []);
+    } catch (error) {
+      console.error('Error loading approvals:', error);
+    } finally {
+      setIsLoadingApprovals(false);
+    }
+  };
+
+  const handleApprove = async (approvalId: string) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/auth/approvals/${approvalId}/approve`, {
+        method: 'POST',
+        headers: { ...authHeaders },
+      });
+      if (response.ok) {
+        setNotice('Usuario aprobado correctamente.');
+        loadApprovals();
+      }
+    } catch (error) {
+      setError('Error al aprobar usuario.');
+    }
+  };
+
+  const handleReject = async (approvalId: string) => {
+    if (!confirm('¿Seguro que quieres rechazar esta solicitud?')) return;
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/auth/approvals/${approvalId}/reject`, {
+        method: 'POST',
+        headers: { ...authHeaders },
+      });
+      if (response.ok) {
+        setNotice('Solicitud rechazada.');
+        loadApprovals();
+      }
+    } catch (error) {
+      setError('Error al rechazar solicitud.');
+    }
+  };
+
   useEffect(() => {
     loadDocuments();
     loadUnansweredQueries();
     loadStatistics();
     loadRecommendations();
     loadInsights();
+    loadApprovals();
   }, [apiBaseUrl, authHeaders, auth?.user?.id, role]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -513,6 +563,44 @@ const AdminPanel: React.FC = () => {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(300px, 1fr)', gap: '1.5rem' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {role === 'directivo' && pendingApprovals.length > 0 && (
+            <section style={{ backgroundColor: '#fff7ed', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid #fed7aa' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h2 style={{ fontSize: '1.25rem', margin: 0, color: '#9a3412', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{ display: 'inline-block', width: '10px', height: '10px', backgroundColor: '#f97316', borderRadius: '50%' }}></span>
+                  Solicitudes de Acceso Pendientes
+                </h2>
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, backgroundColor: '#ffedd5', color: '#9a3412', padding: '0.25rem 0.65rem', borderRadius: '1rem' }}>
+                  {pendingApprovals.length} nuevas
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {pendingApprovals.map((req) => (
+                  <div key={req.id} style={{ backgroundColor: 'var(--white)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid #fdba74', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.9375rem' }}>{req.user_name}</div>
+                      <div style={{ fontSize: '0.8125rem', color: '#64748b' }}>{req.user_email} • Rol: <strong style={{ color: 'var(--metallic-green-dark)' }}>{req.requested_role}</strong></div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button 
+                        onClick={() => handleApprove(req.id)}
+                        style={{ backgroundColor: 'var(--action-green)', color: 'white', border: 'none', padding: '0.45rem 0.85rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Aprobar
+                      </button>
+                      <button 
+                        onClick={() => handleReject(req.id)}
+                        style={{ backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #fca5a5', padding: '0.45rem 0.85rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Rechazar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
               <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Gestion de Politicas</h2>

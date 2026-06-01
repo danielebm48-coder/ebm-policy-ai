@@ -93,4 +93,16 @@ export async function initDb(): Promise<void> {
       used_at TIMESTAMPTZ
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pending_approvals (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      requested_role TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      processed_at TIMESTAMPTZ,
+      processed_by TEXT REFERENCES users(id)
+    );
+  `);
 }

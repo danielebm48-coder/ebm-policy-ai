@@ -75,6 +75,42 @@ export async function useStudentCode(code: string, email: string): Promise<void>
   );
 }
 
+export async function createPendingApproval(userId: string, role: string): Promise<void> {
+  await pool.query(
+    'INSERT INTO pending_approvals (user_id, requested_role) VALUES ($1, $2)',
+    [userId, role]
+  );
+}
+
+export async function getPendingApprovals(): Promise<any[]> {
+  const result = await pool.query(
+    `SELECT pa.*, u.name as user_name, u.email as user_email 
+     FROM pending_approvals pa 
+     JOIN users u ON pa.user_id = u.id 
+     WHERE pa.status = 'pending' 
+     ORDER BY pa.requested_at DESC`
+  );
+  return result.rows;
+}
+
+export async function updateApprovalStatus(approvalId: string, status: string, processedBy: string): Promise<string> {
+  const result = await pool.query(
+    `UPDATE pending_approvals 
+     SET status = $1, processed_at = NOW(), processed_by = $2 
+     WHERE id = $3 
+     RETURNING user_id`,
+    [status, processedBy, approvalId]
+  );
+  return result.rows[0]?.user_id;
+}
+
+export async function setUserActiveStatus(userId: string, active: boolean): Promise<void> {
+  await pool.query(
+    'UPDATE users SET active = $1 WHERE id = $2',
+    [active, userId]
+  );
+}
+
 export async function ensureSampleUsers(): Promise<void> {
   const sampleUsers = [
     { id: 'u_system', name: 'Sistema', email: 'system@colegio.edu', role: 'admin' as UserRole, active: true, password: 'system2026' },
