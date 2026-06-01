@@ -1,10 +1,12 @@
 import express, { Request, Response, NextFunction } from 'express';
+import multer from 'multer';
 import { supabaseClient, supabaseAdmin } from '../src/supabase';
-import { createDocument, logDocumentAccess, getDocumentsByRolePermission } from '../src/document-service';
-import { processUserQuery, rateQueryResponse, getUserQueryHistory, getQueryStatistics } from '../src/query-service';
+import { createDocument, getDocumentText, logDocumentAccess, getDocumentsByRolePermission, updateDocument, parseDocumentContent } from '../src/document-service';
+import { processUserQuery, rateQueryResponse, getUserQueryHistory, getQueryStatistics, getIARecommendations, getStakeholderInsights } from '../src/query-service';
 import { Document, AIQuery } from '../src/supabase-types';
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Middleware para validar usuario autenticado
 interface AuthRequest extends Request {
@@ -92,13 +94,28 @@ async function ensureSupabaseUser(user: AuthRequest['user']): Promise<void> {
   }
 }
 
+// Helper para actualizar permisos
+async function updateDocumentPermissions(documentId: string, permissions: string[]) {
+  if (!supabaseAdmin) throw new Error('Admin client not configured');
+
+  const roleIds = ['admin', 'directivo', 'profesor', 'alumno', 'padre'];
+  const accessRows = roleIds.map((roleId) => ({
+    document_id: documentId,
+    role_id: roleId,
+    access_level: permissions.includes(roleId) ? 'ask' : 'none',
+  }));
+
+  const { error } = await supabaseAdmin
+    .from('document_access_policies')
+    .upsert(accessRows, { onConflict: 'document_id,role_id' });
+
+  if (error) throw new Error(`Failed to update permissions: ${error.message}`);
+}
+
 // ===================================================================
 // RUTAS DE CONSULTAS IA (RAG)
 // ===================================================================
 
-/**
- * POST /api/policies/ask - Hacer una pregunta al repositorio
- */
 router.post('/ask', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { question } = req.body;
@@ -111,7 +128,6 @@ router.post('/ask', requireAuth, async (req: AuthRequest, res: Response) => {
 
     await ensureSupabaseUser(user);
 
-    // Procesar consulta
     const result = await processUserQuery(user.id, user.role, question, ipAddress);
 
     res.json({
@@ -127,9 +143,6 @@ router.post('/ask', requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
-/**
- * POST /api/policies/ask/:queryId/rate - Calificar una respuesta
- */
 router.post('/ask/:queryId/rate', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { queryId } = req.params;
@@ -151,9 +164,6 @@ router.post('/ask/:queryId/rate', requireAuth, async (req: AuthRequest, res: Res
   }
 });
 
-/**
- * GET /api/policies/history - Obtener historial de consultas del usuario
- */
 router.get('/history', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
@@ -174,16 +184,14 @@ router.get('/history', requireAuth, async (req: AuthRequest, res: Response) => {
   }
 });
 
-/**
- * GET /api/policies/debug/knowledge - Diagnostico de la base de conocimiento
- */
 router.get('/debug/knowledge', requireAuth, async (_req: AuthRequest, res: Response) => {
   try {
+    const db = supabaseAdmin || supabaseClient;
     const [documents, chunks, accessPolicies, roles] = await Promise.all([
-      supabaseClient.from('documents').select('id, name, status', { count: 'exact' }).limit(10),
-      supabaseClient.from('document_chunks').select('id, document_id', { count: 'exact' }).limit(10),
-      supabaseClient.from('document_access_policies').select('document_id, role_id, access_level', { count: 'exact' }).limit(10),
-      supabaseClient.from('role_permissions').select('role_id, can_ask_questions', { count: 'exact' }).limit(10),
+      db.from('documents').select('id, name, status', { count: 'exact' }).limit(10),
+      db.from('document_chunks').select('id, document_id', { count: 'exact' }).limit(10),
+      db.from('document_access_policies').select('document_id, role_id, access_level', { count: 'exact' }).limit(10),
+      db.from('role_permissions').select('role_id, can_ask_questions', { count: 'exact' }).limit(10),
     ]);
 
     res.json({
@@ -223,15 +231,10 @@ router.get('/debug/knowledge', requireAuth, async (_req: AuthRequest, res: Respo
 // RUTAS DE DOCUMENTOS
 // ===================================================================
 
-/**
- * GET /api/policies/documents - Obtener documentos accesibles por el usuario
- */
 router.get('/documents', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
-
     const documents = await getDocumentsByRolePermission(user.role, 'view');
-
     res.json({
       success: true,
       data: documents,
@@ -245,16 +248,13 @@ router.get('/documents', requireAuth, async (req: AuthRequest, res: Response) =>
   }
 });
 
-/**
- * POST /api/policies/documents - Crear/subir un nuevo documento
- */
 router.post('/documents', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
-    const { name, type, category, text, description } = req.body;
+    const { name, type, category, text, description, permissions: reqPermissions } = req.body;
 
-    // Verificar permisos de upload
-    const { data: permissions, error: permError } = await supabaseClient
+    const db = supabaseAdmin || supabaseClient;
+    const { data: permissions, error: permError } = await db
       .from('role_permissions')
       .select('can_upload')
       .eq('role_id', user.role)
@@ -264,17 +264,17 @@ router.post('/documents', requireAuth, async (req: AuthRequest, res: Response) =
       return res.status(403).json({ error: 'You do not have permission to upload documents' });
     }
 
-    // Validar campos requeridos
     if (!name || !type || !category || !text) {
       return res.status(400).json({
         error: 'Missing required fields: name, type, category, text',
       });
     }
 
-    // Crear documento
     const document = await createDocument(name, type, category, text, user.id, description);
 
-    if (supabaseAdmin) {
+    if (reqPermissions && Array.isArray(reqPermissions)) {
+      await updateDocumentPermissions(document.id, reqPermissions);
+    } else if (supabaseAdmin) {
       const roleIds = ['admin', 'directivo', 'profesor', 'alumno', 'padre'];
       const accessRows = roleIds.map((roleId) => ({
         document_id: document.id,
@@ -282,16 +282,11 @@ router.post('/documents', requireAuth, async (req: AuthRequest, res: Response) =
         access_level: 'ask',
       }));
 
-      const { error: accessError } = await supabaseAdmin
+      await supabaseAdmin
         .from('document_access_policies')
         .upsert(accessRows, { onConflict: 'document_id,role_id' });
-
-      if (accessError) {
-        console.warn('Failed to set document access policies:', accessError);
-      }
     }
 
-    // Registrar auditoría
     await logDocumentAccess(document.id, user.id, 'upload', `Uploaded by ${user.email}`, req.ip);
 
     res.status(201).json({
@@ -307,15 +302,51 @@ router.post('/documents', requireAuth, async (req: AuthRequest, res: Response) =
   }
 });
 
-/**
- * GET /api/policies/documents/:documentId - Obtener detalles de un documento
- */
+router.get('/documents/:documentId/download', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { documentId } = req.params;
+
+    const visibleDocuments = await getDocumentsByRolePermission(user.role, 'view');
+    if (!visibleDocuments.some((document) => document.id === documentId)) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    const db = supabaseAdmin || supabaseClient;
+    const { data: document, error } = await db
+      .from('documents')
+      .select('name')
+      .eq('id', documentId)
+      .single();
+
+    if (error || !document) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    const text = await getDocumentText(documentId);
+    const safeName = String(document.name || documentId).replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '');
+
+    await logDocumentAccess(documentId, user.id, 'view', 'Document downloaded', req.ip);
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName || documentId}.txt"`);
+    res.send(text);
+  } catch (error) {
+    console.error('Error downloading document:', error);
+    res.status(500).json({
+      error: 'Failed to download document',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
 router.get('/documents/:documentId', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
     const { documentId } = req.params;
 
-    const { data: document, error } = await supabaseClient
+    const db = supabaseAdmin || supabaseClient;
+    const { data: document, error } = await db
       .from('documents')
       .select('*')
       .eq('id', documentId)
@@ -325,12 +356,16 @@ router.get('/documents/:documentId', requireAuth, async (req: AuthRequest, res: 
       return res.status(404).json({ error: 'Document not found' });
     }
 
-    // Registrar acceso
+    const text = await getDocumentText(documentId);
+
     await logDocumentAccess(documentId, user.id, 'view', 'Document viewed', req.ip);
 
     res.json({
       success: true,
-      data: document,
+      data: {
+        ...document,
+        text,
+      },
     });
   } catch (error) {
     console.error('Error fetching document:', error);
@@ -341,18 +376,62 @@ router.get('/documents/:documentId', requireAuth, async (req: AuthRequest, res: 
   }
 });
 
+router.patch('/documents/:documentId', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { documentId } = req.params;
+    const { name, type, category, text, description, permissions: reqPermissions } = req.body;
+
+    const db = supabaseAdmin || supabaseClient;
+    const { data: permissions, error: permError } = await db
+      .from('role_permissions')
+      .select('can_upload, can_manage')
+      .eq('role_id', user.role)
+      .single();
+
+    if (permError || (!permissions?.can_upload && !permissions?.can_manage)) {
+      return res.status(403).json({ error: 'You do not have permission to update documents' });
+    }
+
+    if (!name || !type || !category || !text) {
+      return res.status(400).json({
+        error: 'Missing required fields: name, type, category, text',
+      });
+    }
+
+    const document = await updateDocument(documentId, {
+      name: String(name).trim(),
+      type,
+      category: String(category).trim(),
+      description: description ? String(description).trim() : undefined,
+      text: String(text).trim(),
+      updatedBy: user.id,
+    });
+
+    if (reqPermissions && Array.isArray(reqPermissions)) {
+      await updateDocumentPermissions(documentId, reqPermissions);
+    }
+
+    res.json({
+      success: true,
+      data: document,
+    });
+  } catch (error) {
+    console.error('Error updating document:', error);
+    res.status(500).json({
+      error: 'Failed to update document',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
 // ===================================================================
 // RUTAS DE ADMINISTRACIÓN
 // ===================================================================
 
-/**
- * GET /api/policies/admin/statistics - Obtener estadísticas de consultas
- */
 router.get('/admin/statistics', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
-
-    // Verificar permisos de admin
     if (user.role !== 'admin' && user.role !== 'directivo') {
       return res.status(403).json({ error: 'Admin access required' });
     }
@@ -373,19 +452,16 @@ router.get('/admin/statistics', requireAuth, async (req: AuthRequest, res: Respo
   }
 });
 
-/**
- * GET /api/policies/admin/unanswered - Consultas sin respuesta documental
- */
 router.get('/admin/unanswered', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
-
     if (user.role !== 'admin' && user.role !== 'directivo') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
     const limit = parseInt(req.query.limit as string) || 20;
-    const { data, error } = await supabaseClient
+    const db = supabaseAdmin || supabaseClient;
+    const { data, error } = await db
       .from('ai_queries')
       .select('id, user_id, user_role, question, requested_at, completed_at, status')
       .eq('error_message', 'NO_DOCUMENT_MATCH')
@@ -409,20 +485,14 @@ router.get('/admin/unanswered', requireAuth, async (req: AuthRequest, res: Respo
   }
 });
 
-/**
- * POST /api/policies/admin/permissions - Configurar permisos de rol
- */
 router.post('/admin/permissions', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
-
-    // Verificar permisos de admin
     if (user.role !== 'admin' && user.role !== 'directivo') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
     const { documentId, roleId, accessLevel } = req.body;
-
     if (!supabaseAdmin) {
       return res.status(500).json({ error: 'Admin client not configured' });
     }
@@ -442,7 +512,6 @@ router.post('/admin/permissions', requireAuth, async (req: AuthRequest, res: Res
       return res.status(400).json({ error: `Failed to set permissions: ${error.message}` });
     }
 
-    // Registrar auditoría
     await logDocumentAccess(documentId, user.id, 'update', `Set ${roleId} permissions to ${accessLevel}`, req.ip);
 
     res.json({
@@ -455,6 +524,137 @@ router.post('/admin/permissions', requireAuth, async (req: AuthRequest, res: Res
       error: 'Failed to set permissions',
       details: error instanceof Error ? error.message : 'Unknown error',
     });
+  }
+});
+
+router.get('/admin/recommendations', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'admin' && user.role !== 'directivo') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const recommendations = await getIARecommendations();
+    res.json({ success: true, data: recommendations });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch recommendations', details: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+router.get('/admin/insights', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'admin' && user.role !== 'directivo') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const insights = await getStakeholderInsights();
+    res.json({ success: true, data: insights });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch insights', details: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+router.delete('/documents/:documentId', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { documentId } = req.params;
+
+    if (user.role !== 'admin' && user.role !== 'directivo') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    if (!supabaseAdmin) throw new Error('Admin client not configured');
+
+    const { error } = await supabaseAdmin
+      .from('documents')
+      .update({ status: 'archived', last_updated: new Date().toISOString() })
+      .eq('id', documentId);
+
+    if (error) throw error;
+
+    await logDocumentAccess(documentId, user.id, 'delete', 'Document archived', req.ip);
+    res.json({ success: true, message: 'Document archived' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to archive document', details: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+router.patch('/documents/:documentId/status', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { documentId } = req.params;
+    const { status } = req.body;
+
+    if (user.role !== 'admin' && user.role !== 'directivo') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    if (!['active', 'archived', 'draft', 'review'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    if (!supabaseAdmin) throw new Error('Admin client not configured');
+
+    const { error } = await supabaseAdmin
+      .from('documents')
+      .update({ status, last_updated: new Date().toISOString() })
+      .eq('id', documentId);
+
+    if (error) throw error;
+
+    await logDocumentAccess(documentId, user.id, 'update', `Status changed to ${status}`, req.ip);
+    res.json({ success: true, message: `Status updated to ${status}` });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update status', details: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+router.post('/documents/upload', requireAuth, upload.single('file'), async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const file = req.file;
+    const { type, category, description, permissions: reqPermissionsRaw } = req.body;
+
+    if (!file) return res.status(400).json({ error: 'No file uploaded' });
+    if (!type || !category) return res.status(400).json({ error: 'Type and category are required' });
+
+    if (user.role !== 'admin' && user.role !== 'directivo') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const text = await parseDocumentContent(file.buffer, file.mimetype);
+    const name = file.originalname.replace(/\.[^/.]+$/, "").replace(/[-_]/g, ' ');
+
+    const document = await createDocument(name, type, category, text, user.id, description);
+
+    let reqPermissions: string[] | undefined;
+    if (reqPermissionsRaw) {
+      try {
+        reqPermissions = typeof reqPermissionsRaw === 'string' ? JSON.parse(reqPermissionsRaw) : reqPermissionsRaw;
+      } catch (e) {
+        console.warn('Failed to parse permissions from upload:', e);
+      }
+    }
+
+    if (reqPermissions && Array.isArray(reqPermissions)) {
+      await updateDocumentPermissions(document.id, reqPermissions);
+    } else if (supabaseAdmin) {
+      const roleIds = ['admin', 'directivo', 'profesor', 'alumno', 'padre'];
+      const accessRows = roleIds.map((roleId) => ({
+        document_id: document.id,
+        role_id: roleId,
+        access_level: 'ask',
+      }));
+      await supabaseAdmin.from('document_access_policies').upsert(accessRows, { onConflict: 'document_id,role_id' });
+    }
+
+    await logDocumentAccess(document.id, user.id, 'upload', `Uploaded file ${file.originalname}`, req.ip);
+
+    res.status(201).json({ success: true, data: document });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ error: 'Failed to upload document', details: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 

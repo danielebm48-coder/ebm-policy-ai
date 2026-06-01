@@ -82,4 +82,15 @@ export async function initDb(): Promise<void> {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_policies_status ON policies(status);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_policies_category ON policies(category);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_queries_user ON queries(user_id);');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS authorized_student_codes (
+      code TEXT PRIMARY KEY,
+      student_name TEXT,
+      used BOOLEAN NOT NULL DEFAULT FALSE,
+      used_by_email TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      used_at TIMESTAMPTZ
+    );
+  `);
 }

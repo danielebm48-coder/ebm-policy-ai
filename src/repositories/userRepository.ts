@@ -17,7 +17,7 @@ function mapRow(row: any): UserProfile {
 }
 
 export async function getUserByEmail(email: string): Promise<UserWithPassword | null> {
-  const result = await pool.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+  const result = await pool.query('SELECT * FROM users WHERE email = $1', [email.trim().toLowerCase()]);
   const row = result.rows[0];
   if (!row) return null;
   return {
@@ -43,15 +43,43 @@ export async function createUser(user: Omit<UserWithPassword, 'createdAt'>): Pro
   await pool.query(
     `INSERT INTO users (id, name, email, role, active, password, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [user.id, user.name, user.email.toLowerCase(), user.role, user.active, user.password, createdAt],
+    [user.id, user.name, user.email.trim().toLowerCase(), user.role, user.active, user.password, createdAt],
   );
   return (await getUserById(user.id))!;
+}
+
+export async function verifyStudentCode(code: string): Promise<{ valid: boolean; studentName?: string; used: boolean }> {
+  const result = await pool.query(
+    'SELECT student_name, used FROM authorized_student_codes WHERE code = $1',
+    [code.trim()]
+  );
+  
+  if (result.rows.length === 0) {
+    return { valid: false, used: false };
+  }
+  
+  const row = result.rows[0];
+  return { 
+    valid: true, 
+    studentName: row.student_name, 
+    used: row.used 
+  };
+}
+
+export async function useStudentCode(code: string, email: string): Promise<void> {
+  await pool.query(
+    `UPDATE authorized_student_codes 
+     SET used = TRUE, used_by_email = $1, used_at = NOW() 
+     WHERE code = $2`,
+    [email.trim().toLowerCase(), code.trim()]
+  );
 }
 
 export async function ensureSampleUsers(): Promise<void> {
   const sampleUsers = [
     { id: 'u_system', name: 'Sistema', email: 'system@colegio.edu', role: 'admin' as UserRole, active: true, password: 'system2026' },
     { id: 'u_dguzman_admin', name: 'D. Guzman', email: 'dguzman@ebm.edu.sv', role: 'admin' as UserRole, active: true, password: 'admin2026' },
+    { id: 'u_enadeh_admin', name: 'E. Nadeh', email: 'enadeh@ebm.edu.sv', role: 'admin' as UserRole, active: true, password: 'admin2026' },
     { id: 'u_directivo', name: 'Directora Ana', email: 'ana@colegio.edu', role: 'directivo' as UserRole, active: true, password: 'directivo2026' },
     { id: 'u_profesor', name: 'Profesor Luis', email: 'luis@colegio.edu', role: 'profesor' as UserRole, active: true, password: 'profesor2026' },
     { id: 'u_demo_profesor', name: 'Profesor Demo', email: 'demo@colegio.edu', role: 'profesor' as UserRole, active: true, password: 'demo2026' },

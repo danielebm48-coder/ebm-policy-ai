@@ -7,7 +7,7 @@ import { dirname } from 'path';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import { createSamplePolicies, listPolicies, findPolicyById, createPolicy, updatePolicy, searchPolicies, buildReferences } from '../src/services/policyService';
-import { createToken, initAuth, loginUser } from '../src/services/authService';
+import { createToken, initAuth, loginUser, registerUser } from '../src/services/authService';
 import { answerQuestion } from '../src/services/iaService';
 import { createQuery } from '../src/repositories/queryRepository';
 import { addAuditEntry } from '../src/repositories/auditRepository';
@@ -48,6 +48,27 @@ app.post('/api/auth/login', async (req, res) => {
     console.error('[ERROR] Login failed:', error);
     res.status(500).json({
       error: 'No se pudo iniciar sesion',
+      details: error instanceof Error ? error.message : 'Error desconocido',
+    });
+  }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { name, email, password, role, studentCode } = req.body;
+    
+    const result = await registerUser({ name, email, password, role, studentCode });
+    
+    if (result.error) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    const token = createToken(result.user!.id, result.user!.role);
+    res.status(201).json({ token, user: result.user });
+  } catch (error) {
+    console.error('[ERROR] Registration failed:', error);
+    res.status(500).json({
+      error: 'No se pudo completar el registro',
       details: error instanceof Error ? error.message : 'Error desconocido',
     });
   }

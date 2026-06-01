@@ -85,7 +85,8 @@ async function findKeywordChunks(
   userRole: string,
   limit: number = 5
 ): Promise<ChunkWithSimilarity[]> {
-  const { data: accessRows, error: accessError } = await supabaseClient
+  const db = supabaseAdmin || supabaseClient;
+  const { data: accessRows, error: accessError } = await db
     .from('document_access_policies')
     .select('document_id')
     .eq('role_id', userRole)
@@ -98,7 +99,7 @@ async function findKeywordChunks(
 
   const documentIds = [...new Set((accessRows || []).map((row: any) => row.document_id))];
   if (documentIds.length === 0) {
-    const { data: activeDocuments, error: docsError } = await supabaseClient
+    const { data: activeDocuments, error: docsError } = await db
       .from('documents')
       .select('id')
       .eq('status', 'active')
@@ -115,7 +116,7 @@ async function findKeywordChunks(
     return findBuiltInChunks(question, limit);
   }
 
-  const { data: chunks, error: chunksError } = await supabaseClient
+  const { data: chunks, error: chunksError } = await db
     .from('document_chunks')
     .select('id, document_id, text, chunk_number')
     .in('document_id', documentIds)
@@ -209,7 +210,8 @@ export async function findSimilarChunks(
     const questionEmbedding = await generateEmbedding(question);
 
     // Buscar chunks similares usando pgvector
-    const { data, error } = await supabaseClient.rpc('match_documents', {
+    const db = supabaseAdmin || supabaseClient;
+    const { data, error } = await db.rpc('match_documents', {
       query_embedding: questionEmbedding,
       match_count: limit,
       match_threshold: 0.2,
@@ -295,7 +297,7 @@ export async function processUserQuery(
 
     // Obtener documentos completos asociados a los chunks
     const uniqueDocIds = hasDocumentMatch ? [...new Set(allowedChunks.map((c) => c.document_id))] : [];
-    const { data: documents, error: docError } = await supabaseClient
+    const { data: documents, error: docError } = await supabaseAdmin
       .from('documents')
       .select('*')
       .in('id', uniqueDocIds);
@@ -425,7 +427,8 @@ export async function getUserQueryHistory(
   limit: number = 20
 ): Promise<AIQuery[]> {
   try {
-    const { data, error } = await supabaseClient
+    const db = supabaseAdmin || supabaseClient;
+    const { data, error } = await db
       .from('ai_queries')
       .select('*')
       .eq('user_id', userId)
@@ -448,7 +451,8 @@ export async function getUserQueryHistory(
  */
 export async function getQueryStatistics(startDate?: string, endDate?: string) {
   try {
-    let query = supabaseClient.from('ai_queries').select('*');
+    const db = supabaseAdmin || supabaseClient;
+    let query = db.from('ai_queries').select('*');
 
     if (startDate) {
       query = query.gte('requested_at', startDate);
@@ -468,6 +472,8 @@ export async function getQueryStatistics(startDate?: string, endDate?: string) {
       errors: number;
       average_rating: number;
       by_role: Record<string, number>;
+      unanswered: number;
+      most_consulted: Array<{ id: string; name: string; count: number }>;
     } = {
       total: data?.length || 0,
       errors: data?.filter((q: any) => q.status === 'error').length || 0,
@@ -479,6 +485,8 @@ export async function getQueryStatistics(startDate?: string, endDate?: string) {
             (data.filter((q: any) => q.helpful_rating !== null).length || 1)
           : 0,
       by_role: {},
+      unanswered: data?.filter((q: any) => q.error_message === 'NO_DOCUMENT_MATCH').length || 0,
+      most_consulted: [],
     };
 
     // Agrupar por rol
@@ -489,9 +497,98 @@ export async function getQueryStatistics(startDate?: string, endDate?: string) {
       stats.by_role[query.user_role]++;
     });
 
+    // Calcular documentos más consultados
+    const docCounts: Record<string, number> = {};
+    data?.forEach((query: any) => {
+      if (query.source_documents && Array.isArray(query.source_documents)) {
+        query.source_documents.forEach((docId: string) => {
+          docCounts[docId] = (docCounts[docId] || 0) + 1;
+        });
+      }
+    });
+
+    const docIds = Object.keys(docCounts);
+    if (docIds.length > 0) {
+      const { data: docs } = await db.from('documents').select('id, name').in('id', docIds);
+      stats.most_consulted = (docs || [])
+        .map((d) => ({
+          id: d.id,
+          name: d.name,
+          count: docCounts[d.id] || 0,
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+    }
+
     return stats;
   } catch (error) {
     console.error('Error fetching query statistics:', error);
+    throw error;
+  }
+}
+
+/**
+ * Analizar interacciones de grupos de interes para proporcionar insights a la direccion
+ */
+export async function getStakeholderInsights(): Promise<any> {
+  if (!supabaseAdmin) {
+    throw new Error('Admin client not configured');
+  }
+
+  try {
+    const { data: queries } = await supabaseAdmin
+      .from('ai_queries')
+      .select('user_role, question, helpful_rating, source_documents, requested_at')
+      .order('requested_at', { ascending: false });
+
+    if (!queries || queries.length === 0) {
+      return { message: 'No hay datos suficientes para el analisis.' };
+    }
+
+    // Agrupar por rol
+    const byRole: Record<string, { count: number; queries: string[]; avgRating: number; ratedCount: number }> = {};
+    queries.forEach((q) => {
+      if (!byRole[q.user_role]) {
+        byRole[q.user_role] = { count: 0, queries: [], avgRating: 0, ratedCount: 0 };
+      }
+      byRole[q.user_role].count++;
+      byRole[q.user_role].queries.push(q.question);
+      if (q.helpful_rating) {
+        byRole[q.user_role].avgRating += q.helpful_rating;
+        byRole[q.user_role].ratedCount++;
+      }
+    });
+
+    const roleInsights = Object.entries(byRole).map(([role, data]) => ({
+      role,
+      count: data.count,
+      avgRating: data.ratedCount > 0 ? data.avgRating / data.ratedCount : 0,
+    }));
+
+    // Usar IA para resumir preocupaciones por rol
+    const roleAnalysisPrompt = `Analiza las siguientes preocupaciones de diferentes grupos de interes en la escuela basado en sus preguntas:
+    
+${Object.entries(byRole)
+  .map(([role, data]) => `ROL ${role}:\n- ${data.queries.slice(0, 10).join('\n- ')}`)
+  .join('\n\n')}
+
+Proporciona un resumen ejecutivo para la direccion sobre:
+1. Temas principales de preocupacion por cada grupo.
+2. Areas de oportunidad para mejorar la comunicacion institucional.
+3. Sugerencias para toma de decisiones administrativas.`;
+
+    const result = await generateResponse(
+      roleAnalysisPrompt,
+      [],
+      'Eres un consultor senior en estrategia educativa y comunicacion institucional.'
+    );
+
+    return {
+      roleStats: roleInsights,
+      strategicAnalysis: result.answer,
+    };
+  } catch (error) {
+    console.error('Error in stakeholder insights:', error);
     throw error;
   }
 }

@@ -2,6 +2,33 @@ import { supabaseClient, supabaseAdmin } from './supabase';
 export { supabaseAdmin };
 import { generateEmbedding } from './gemini';
 import { Document, DocumentChunk } from './supabase-types';
+import pdf from 'pdf-parse';
+import mammoth from 'mammoth';
+
+type EditableDocumentType = 'policy' | 'manual' | 'procedure' | 'handbook' | 'other';
+type DocumentStatus = 'active' | 'archived' | 'draft' | 'review';
+
+/**
+ * Parsea el contenido de un buffer (PDF, DOCX o TXT) a texto
+ */
+export async function parseDocumentContent(
+  buffer: Buffer,
+  mimeType: string
+): Promise<string> {
+  if (mimeType === 'application/pdf') {
+    const data = await pdf(buffer);
+    return data.text;
+  } else if (
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    mimeType === 'application/msword'
+  ) {
+    const result = await mammoth.extractRawText({ buffer });
+    return result.value;
+  } else {
+    // Asumir texto plano para otros tipos
+    return buffer.toString('utf-8');
+  }
+}
 
 /**
  * Dividir un texto en chunks
@@ -150,6 +177,80 @@ export async function processDocumentChunks(documentId: string, text: string): P
   }
 }
 
+export async function getDocumentText(documentId: string): Promise<string> {
+  const chunks = await getDocumentChunks(documentId);
+  return chunks.reduce((text, chunk) => {
+    if (!text) return chunk.text;
+
+    const maxOverlap = Math.min(150, text.length, chunk.text.length);
+    for (let size = maxOverlap; size > 0; size--) {
+      if (text.endsWith(chunk.text.slice(0, size))) {
+        return text + chunk.text.slice(size);
+      }
+    }
+
+    return `${text}\n\n${chunk.text}`;
+  }, '');
+}
+
+export async function updateDocument(
+  documentId: string,
+  updates: {
+    name: string;
+    type: EditableDocumentType;
+    category: string;
+    text: string;
+    updatedBy: string;
+    description?: string;
+  }
+): Promise<Document> {
+  if (!supabaseAdmin) {
+    throw new Error('Admin client not configured');
+  }
+
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from('documents')
+    .select('version')
+    .eq('id', documentId)
+    .single();
+
+  if (existingError || !existing) {
+    throw new Error(existingError?.message || 'Document not found');
+  }
+
+  const { data: document, error: docError } = await supabaseAdmin
+    .from('documents')
+    .update({
+      name: updates.name,
+      type: updates.type,
+      category: updates.category,
+      description: updates.description,
+      version: (existing.version || 1) + 1,
+      last_updated: new Date().toISOString(),
+    })
+    .eq('id', documentId)
+    .select()
+    .single();
+
+  if (docError || !document) {
+    throw new Error(docError?.message || 'Failed to update document');
+  }
+
+  const { error: deleteError } = await supabaseAdmin
+    .from('document_chunks')
+    .delete()
+    .eq('document_id', documentId);
+
+  if (deleteError) {
+    throw new Error(`Failed to replace chunks: ${deleteError.message}`);
+  }
+
+  await processDocumentChunks(documentId, updates.text);
+  await logDocumentAccess(documentId, updates.updatedBy, 'update', `Updated document ${updates.name}`);
+
+  return document as Document;
+}
+
 /**
  * Buscar documentos por permiso de rol
  */
@@ -158,7 +259,8 @@ export async function getDocumentsByRolePermission(
   accessLevel: 'view' | 'search' | 'ask' = 'view'
 ): Promise<Document[]> {
   try {
-    const { data, error } = await supabaseClient
+    const db = supabaseAdmin || supabaseClient;
+    const { data, error } = await db
       .from('document_access_policies')
       .select('document_id')
       .eq('role_id', roleId);
@@ -173,7 +275,7 @@ export async function getDocumentsByRolePermission(
 
     const documentIds = data.map((d: any) => d.document_id);
 
-    const { data: documents, error: docError } = await supabaseClient
+    const { data: documents, error: docError } = await db
       .from('documents')
       .select('*')
       .in('id', documentIds)
@@ -195,7 +297,8 @@ export async function getDocumentsByRolePermission(
  */
 export async function getDocumentChunks(documentId: string): Promise<DocumentChunk[]> {
   try {
-    const { data, error } = await supabaseClient
+    const db = supabaseAdmin || supabaseClient;
+    const { data, error } = await db
       .from('document_chunks')
       .select('*')
       .eq('document_id', documentId)
@@ -256,7 +359,8 @@ export async function checkDocumentAccess(
   requiredAccess: 'view' | 'search' | 'ask' = 'view'
 ): Promise<boolean> {
   try {
-    const { data, error } = await supabaseClient
+    const db = supabaseAdmin || supabaseClient;
+    const { data, error } = await db
       .from('document_access_policies')
       .select('access_level')
       .eq('document_id', documentId)
@@ -264,7 +368,7 @@ export async function checkDocumentAccess(
       .single();
 
     if (error || !data) {
-      const { data: rolePermissions, error: roleError } = await supabaseClient
+      const { data: rolePermissions, error: roleError } = await db
         .from('role_permissions')
         .select('can_ask_questions, can_search, can_view')
         .eq('role_id', roleId)
