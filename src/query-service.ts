@@ -115,14 +115,14 @@ export async function processUserQuery(
 
     // 1. BÚSQUEDA HÍBRIDA (Vectorial + Keywords)
     const [vectorChunks, keywordChunks] = await Promise.all([
-      findSimilarChunks(question, 12),
-      findKeywordChunks(question, userRole, 5)
+      findSimilarChunks(question, 8), // Reducido de 12 a 8
+      findKeywordChunks(question, userRole, 3) // Reducido de 5 a 3
     ]);
 
     // 2. COMBINAR Y FILTRAR
     const allChunks = [...vectorChunks, ...keywordChunks];
     const uniqueChunks = Array.from(new Map(allChunks.map(c => [c.id, c])).values())
-      .slice(0, 15); // Máximo 15 fragmentos (~5k tokens)
+      .slice(0, 10); // Reducido de 15 a 10 fragmentos (~3k tokens)
 
     // 3. OBTENER NOMBRES DE DOCUMENTOS PARA CONTEXTO
     const docIds = [...new Set(uniqueChunks.map(c => c.document_id))];

@@ -28,29 +28,24 @@ export async function generateEmbedding(text: string): Promise<number[]> {
         body: JSON.stringify({
           model: 'models/gemini-embedding-001',
           content: {
-            parts: [
-              {
-                text: text,
-              },
-            ],
+            parts: [{ text: text }],
           },
         }),
       }
     );
 
-    if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.statusText}`);
+    const data = await response.json();
+    
+    if (data.error) {
+      const code = data.error.code;
+      const message = data.error.message;
+      if (code === 429) {
+        throw new Error(`LIMITE_EXCEDIDO: (Embeddings) ${message}`);
+      }
+      throw new Error(`Gemini Embedding Error [${code}]: ${message}`);
     }
 
-    const data = await response.json();
-    let values = data.embedding.values;
-    
-    // Si la dimensión es > 1536, truncamos (Matryoshka embeddings)
-    if (values.length > 1536) {
-      values = values.slice(0, 1536);
-    }
-    
-    return values;
+    return data.embedding.values;
   } catch (error) {
     console.error('Error generating embedding:', error);
     throw error;
@@ -73,13 +68,7 @@ export async function generateResponse(
   }
 
   const contextText = context.join('\n\n---\n\n');
-  const defaultSystemPrompt = `Eres un asistente de políticas escolares. 
-Tu objetivo es responder preguntas sobre las políticas, manuales y documentos de la escuela 
-basándote en la información proporcionada. 
-Sé preciso, amable y siempre cita las fuentes de donde obtienes la información.
-Si la información no está disponible, di claramente que no encuentras la respuesta en los documentos.`;
-
-  const fullPrompt = `${systemPrompt || defaultSystemPrompt}
+  const fullPrompt = `${systemPrompt}
 
 DOCUMENTOS DE REFERENCIA:
 ${contextText}
@@ -87,30 +76,20 @@ ${contextText}
 PREGUNTA DEL USUARIO:
 ${question}
 
-Por favor, responde de manera clara y directa, basándote en los documentos proporcionados.`;
+Por favor, responde de manera clara y directa basándote en los documentos.`;
 
   try {
     const response = await fetch(
-      `${GEMINI_API_URL}/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`,
+      `${GEMINI_API_URL}/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: fullPrompt,
-                },
-              ],
-            },
-          ],
+          contents: [{ parts: [{ text: fullPrompt }] }],
           generationConfig: {
             temperature: 0.7,
-            topK: 40,
-            topP: 0.95,
             maxOutputTokens: 2048,
           },
         }),
@@ -120,29 +99,27 @@ Por favor, responde de manera clara y directa, basándote en los documentos prop
     const data = await response.json();
     
     if (data.error) {
-      const errorMsg = data.error.message || 'Error desconocido de la API de Gemini';
-      if (data.error.code === 429) {
-        throw new Error('LIMITE_EXCEDIDO: Demasiadas preguntas en poco tiempo. Por favor, espera un minuto antes de continuar.');
+      const code = data.error.code;
+      const message = data.error.message;
+      if (code === 429) {
+        throw new Error(`LIMITE_EXCEDIDO: (Chat) ${message}`);
       }
-      throw new Error(`Gemini API Error: ${errorMsg}`);
+      throw new Error(`Gemini Chat Error [${code}]: ${message}`);
     }
 
     if (!data.candidates || data.candidates.length === 0) {
-      // Verificar si fue bloqueado por seguridad
-      const finishReason = data.promptFeedback?.blockReason || 'BLOQUEADO';
-      if (finishReason === 'SAFETY') {
-        throw new Error('CONTENIDO_BLOQUEADO: La pregunta o el contenido de los documentos ha activado los filtros de seguridad. Intenta reformular tu pregunta.');
-      }
-      throw new Error(`No se pudo generar una respuesta (Motivo: ${finishReason})`);
+      const blockReason = data.promptFeedback?.blockReason;
+      if (blockReason === 'SAFETY') throw new Error('CONTENIDO_BLOQUEADO');
+      throw new Error(`No se obtuvo respuesta de Gemini. Motivo: ${blockReason || 'Desconocido'}`);
     }
 
-    const answer = data.candidates[0].content.parts[0].text;
-    const tokensUsed = {
-      input: data.usageMetadata?.promptTokenCount || 0,
-      output: data.usageMetadata?.candidatesTokenCount || 0,
+    return {
+      answer: data.candidates[0].content.parts[0].text,
+      tokensUsed: {
+        input: data.usageMetadata?.promptTokenCount || 0,
+        output: data.usageMetadata?.candidatesTokenCount || 0,
+      },
     };
-
-    return { answer, tokensUsed };
   } catch (error) {
     console.error('Error generating response:', error);
     throw error;
