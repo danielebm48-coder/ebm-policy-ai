@@ -1,6 +1,6 @@
 import { supabaseClient, supabaseAdmin } from './supabase';
 import { generateEmbedding, generateResponse } from './gemini';
-import { getDocumentChunks, logDocumentAccess, checkDocumentAccess } from './document-service';
+import { logDocumentAccess, getAllAllowedDocumentsText } from './document-service';
 import { AIQuery } from './supabase-types';
 
 interface QueryResult {
@@ -97,7 +97,7 @@ async function findKeywordChunks(question: string, roleId: string, limit: number
 }
 
 /**
- * PROCESAMIENTO DE CONSULTA
+ * PROCESAMIENTO DE CONSULTA (Smart RAG)
  */
 export async function processUserQuery(
   userId: string,
@@ -115,7 +115,7 @@ export async function processUserQuery(
 
     // 1. BÚSQUEDA HÍBRIDA (Vectorial + Keywords)
     const [vectorChunks, keywordChunks] = await Promise.all([
-      findSimilarChunks(question, 10),
+      findSimilarChunks(question, 12),
       findKeywordChunks(question, userRole, 5)
     ]);
 
@@ -140,15 +140,15 @@ export async function processUserQuery(
 
     if (uniqueChunks.length > 0) {
       const systemPrompt = `Eres el Asistente Inteligente de la Escuela Bilingüe Maquilishuat (EBM). 
-Tu misión es dar respuestas ÁGILES, RACIONALES y AMIGABLES basadas exclusivamente en los fragmentos de documentos proporcionados.
+Tu misión es dar respuestas COMPLETAS, ÁGILES, RACIONALES y AMIGABLES basadas exclusivamente en los fragmentos de documentos proporcionados.
 
 REGLAS DE ORO:
-1. CONCISIÓN: No te extiendas innecesariamente. Ve al punto.
-2. RACIONALIDAD: Si te preguntan por un protocolo (ej. drogas, conducta), explica los pasos de forma lógica.
+1. CONCISIÓN: No te extiendas innecesariamente pero cierra todas las ideas.
+2. RACIONALIDAD: Si te preguntan por un protocolo (ej. drogas, conducta), explica los pasos de forma lógica y clara.
 3. TONO: Profesional pero cercano.
-4. CALENDARIO: Si hay fechas en los fragmentos, dales prioridad.
-5. NO REPETIR: No listes todos los documentos al final. Solo responde la pregunta.
-6. SI NO SABES: Si los fragmentos no contienen la respuesta, di que no se encuentra en la normativa actual.`;
+4. CALENDARIO: Si hay fechas en los fragmentos, dales prioridad absoluta.
+5. NO REPETIR: No listes todos los documentos consultados.
+6. SI NO SABES: Si los fragmentos no contienen la respuesta, di amablemente que no se encuentra en la normativa actual.`;
 
       const result = await generateResponse(question, [contextText], systemPrompt);
       answer = result.answer;
@@ -158,14 +158,20 @@ REGLAS DE ORO:
     }
 
     // 5. FINALIZAR
+    const documentNames = Array.from(docMap.values());
     await supabaseAdmin.from('ai_queries').update({
       answer,
-      source_documents: Array.from(docMap.values()),
+      source_documents: documentNames,
       model_used: 'gemini-1.5-flash-smart-rag',
       tokens_used: tokensUsed,
       status: 'completed',
       completed_at: new Date().toISOString()
     }).eq('id', queryId);
+
+    // Auditoría
+    for (const docId of docIds) {
+      await logDocumentAccess(docId, userId, 'query', `Query: ${question}`, ipAddress);
+    }
 
     return { queryId, question, answer, sourceDocuments: [], tokensUsed };
 
@@ -175,29 +181,125 @@ REGLAS DE ORO:
     if (error.message?.includes('LIMITE_EXCEDIDO')) errorMsg = "He alcanzado mi límite de procesamiento. Por favor, espera 30 segundos.";
     if (error.message?.includes('CONTENIDO_BLOQUEADO')) errorMsg = "No puedo responder a esa pregunta por motivos de seguridad. Por favor, reformúlala.";
 
-    if (supabaseAdmin) await supabaseAdmin.from('ai_queries').update({ status: 'error', error_message: error.message }).eq('id', queryId);
+    if (supabaseAdmin) {
+        await supabaseAdmin.from('ai_queries').update({ 
+            status: 'error', 
+            error_message: error.message,
+            completed_at: new Date().toISOString()
+        }).eq('id', queryId);
+    }
     return { queryId, question, answer: errorMsg, sourceDocuments: [], tokensUsed: { input: 0, output: 0 } };
   }
 }
 
-// (Otras funciones como rateQueryResponse se mantienen igual)
-export async function rateQueryResponse(queryId: string, rating: number, feedback?: string): Promise<void> {
+/**
+ * Calificar la utilidad de una respuesta
+ */
+export async function rateQueryResponse(
+  queryId: string,
+  rating: number,
+  feedback?: string
+): Promise<void> {
   if (!supabaseAdmin) throw new Error('Admin client not configured');
-  await supabaseAdmin.from('ai_queries').update({ helpful_rating: rating, feedback, updated_at: new Date().toISOString() }).eq('id', queryId);
+  await supabaseAdmin.from('ai_queries').update({ 
+    helpful_rating: rating, 
+    feedback, 
+    updated_at: new Date().toISOString() 
+  }).eq('id', queryId);
 }
 
-export async function getUserQueryHistory(userId: string, limit: number = 20): Promise<AIQuery[]> {
+/**
+ * Obtener historial de consultas del usuario
+ */
+export async function getUserQueryHistory(
+  userId: string,
+  limit: number = 20
+): Promise<AIQuery[]> {
   const db = supabaseAdmin || supabaseClient;
-  const { data } = await db.from('ai_queries').select('*').eq('user_id', userId).order('requested_at', { ascending: false }).limit(limit);
+  const { data } = await db
+    .from('ai_queries')
+    .select('*')
+    .eq('user_id', userId)
+    .order('requested_at', { ascending: false })
+    .limit(limit);
   return (data || []) as AIQuery[];
 }
 
+/**
+ * Obtener estadísticas de consultas
+ */
 export async function getQueryStatistics(startDate?: string, endDate?: string) {
-  const db = supabaseAdmin || supabaseClient;
-  let q = db.from('ai_queries').select('*');
-  if (startDate) q = q.gte('requested_at', startDate);
-  if (endDate) q = q.lte('requested_at', endDate);
-  const { data } = await q;
-  // Simplificado para ahorrar espacio
-  return { total: data?.length || 0 };
+  try {
+    const db = supabaseAdmin || supabaseClient;
+    let query = db.from('ai_queries').select('*');
+
+    if (startDate) query = query.gte('requested_at', startDate);
+    if (endDate) query = query.lte('requested_at', endDate);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const stats = {
+      total: data?.length || 0,
+      errors: data?.filter((q: any) => q.status === 'error').length || 0,
+      average_rating: data?.filter((q: any) => q.helpful_rating).reduce((acc: number, q: any) => acc + q.helpful_rating, 0) / (data?.filter((q: any) => q.helpful_rating).length || 1) || 0,
+      by_role: {} as Record<string, number>,
+      unanswered: data?.filter((q: any) => q.error_message === 'NO_DOCUMENT_MATCH').length || 0
+    };
+
+    data?.forEach((q: any) => {
+      stats.by_role[q.user_role] = (stats.by_role[q.user_role] || 0) + 1;
+    });
+
+    return stats;
+  } catch (error) {
+    console.error('Error fetching query statistics:', error);
+    throw error;
+  }
+}
+
+/**
+ * Analizar interacciones para proporcionar insights
+ */
+export async function getStakeholderInsights(): Promise<any> {
+  if (!supabaseAdmin) throw new Error('Admin client not configured');
+  try {
+    const { data: queries } = await supabaseAdmin
+      .from('ai_queries')
+      .select('user_role, question, requested_at')
+      .order('requested_at', { ascending: false })
+      .limit(50);
+
+    if (!queries || queries.length === 0) return { message: 'No hay datos suficientes.' };
+
+    const analysisPrompt = `Analiza estas preocupaciones de la comunidad escolar:\n${queries.map(q => `- [${q.user_role}]: ${q.question}`).join('\n')}\n\nProporciona un resumen ejecutivo de temas principales y sugerencias.`;
+    const result = await generateResponse(analysisPrompt, [], 'Eres un experto en gestión escolar.');
+    return { strategicAnalysis: result.answer };
+  } catch (error) {
+    console.error('Error in stakeholder insights:', error);
+    throw error;
+  }
+}
+
+/**
+ * Generar recomendaciones basadas en consultas sin respuesta
+ */
+export async function getIARecommendations(): Promise<any> {
+  if (!supabaseAdmin) throw new Error('Admin client not configured');
+  try {
+    const { data: unanswered } = await supabaseAdmin
+      .from('ai_queries')
+      .select('question')
+      .eq('error_message', 'NO_DOCUMENT_MATCH')
+      .limit(30);
+
+    if (!unanswered || unanswered.length === 0) return { recommendations: 'No hay suficientes datos.' };
+
+    const prompt = `Analiza estas preguntas sin respuesta:\n${unanswered.map(q => `- ${q.question}`).join('\n')}\n\nSugiere 3 temas prioritarios para nuevas políticas.`;
+    const result = await generateResponse(prompt, [], 'Eres un experto en normativa escolar.');
+    return { recommendations: result.answer };
+  } catch (error) {
+    console.error('Error in IA recommendations:', error);
+    throw error;
+  }
 }
