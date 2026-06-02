@@ -1,6 +1,6 @@
 import { supabaseClient, supabaseAdmin } from './supabase';
 import { generateEmbedding, generateResponse } from './gemini';
-import { getDocumentChunks, logDocumentAccess, checkDocumentAccess } from './document-service';
+import { getDocumentChunks, logDocumentAccess, checkDocumentAccess, getAllAllowedDocumentsText } from './document-service';
 import { AIQuery } from './supabase-types';
 
 interface QueryResult {
@@ -104,160 +104,6 @@ function findBuiltInChunks(question: string, limit: number = 5): ChunkWithSimila
   return scored.slice(0, limit);
 }
 
-async function findKeywordChunks(
-  question: string,
-  userRole: string,
-  limit: number = 5
-): Promise<ChunkWithSimilarity[]> {
-  const db = supabaseAdmin || supabaseClient;
-  console.log(`[findKeywordChunks] Searching for: "${question.substring(0, 50)}..." for role: ${userRole}`);
-  
-  // Intentar obtener documentos por políticas de acceso
-  const { data: accessRows, error: accessError } = await db
-    .from('document_access_policies')
-    .select('document_id')
-    .eq('role_id', userRole)
-    .in('access_level', ['ask', 'search', 'view']);
-
-  let documentIds: string[] = [];
-  
-  if (!accessError && accessRows && accessRows.length > 0) {
-    documentIds = [...new Set((accessRows || []).map((row: any) => row.document_id))];
-    console.log(`[findKeywordChunks] Found ${documentIds.length} document IDs from access policies for role ${userRole}`);
-  }
-
-  // Si no hay políticas de acceso, buscar documentos activos por defecto
-  if (documentIds.length === 0) {
-    console.log(`[findKeywordChunks] No access policies found for role ${userRole}, fetching all active documents...`);
-    const { data: activeDocuments, error: docError } = await db
-      .from('documents')
-      .select('id, name')
-      .eq('status', 'active')
-      .limit(100);
-    
-    if (!docError && activeDocuments && activeDocuments.length > 0) {
-      documentIds = [...new Set((activeDocuments || []).map((row: any) => row.id))];
-      const docNames = (activeDocuments || []).map((d: any) => d.name).join(', ');
-      console.log(`[findKeywordChunks] Found ${documentIds.length} active documents: ${docNames}`);
-    }
-  }
-
-  // Si aún no hay documentos, retornar built-in chunks
-  if (documentIds.length === 0) {
-    console.warn('[findKeywordChunks] No documents found for search, returning built-in chunks');
-    return findBuiltInChunks(question, limit);
-  }
-
-  // Buscar chunks de los documentos encontrados
-  const { data: chunks, error: chunksError } = await db
-    .from('document_chunks')
-    .select('id, document_id, text, chunk_number')
-    .in('document_id', documentIds)
-    .limit(200);
-
-  if (chunksError) {
-    console.error('[findKeywordChunks] Error fetching chunks:', chunksError);
-    // Si hay documentos reales pero falla la consulta de chunks, no usar contenido incorporado.
-    return documentIds.length > 0 ? [] : findBuiltInChunks(question, limit);
-  }
-
-  if (!chunks || chunks.length === 0) {
-    if (documentIds.length > 0) {
-      console.warn(`[findKeywordChunks] Documents found (${documentIds.length}), but no chunks exist yet for those documents.`);
-      return [];
-    }
-
-    console.warn('[findKeywordChunks] No documents found for search, returning built-in chunks');
-    return findBuiltInChunks(question, limit);
-  }
-
-  console.log(`[findKeywordChunks] Found ${chunks.length} chunks from ${documentIds.length} documents`);
-
-
-  const tokens = tokenizeQuestion(question);
-  if (tokens.length === 0) {
-    // Si no hay tokens relevantes, retornar todos los chunks como fallback
-    return chunks
-      .map((chunk: any) => ({
-        id: chunk.id,
-        document_id: chunk.document_id,
-        text: chunk.text,
-        similarity: 0.1,
-      }))
-      .slice(0, limit);
-  }
-
-  const scored = (chunks || [])
-    .map((chunk: any) => {
-      const normalizedText = String(chunk.text || '')
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '');
-      
-      // Contar coincidencias exactas de palabras clave
-      const hits = tokens.filter((token) => normalizedText.includes(token)).length;
-      const score = hits / Math.max(tokens.length, 1);
-
-      return {
-        id: chunk.id,
-        document_id: chunk.document_id,
-        text: chunk.text,
-        similarity: Math.max(score, 0.01), // Mínimo 0.01 para no perder chunks
-      };
-    })
-    .sort((a, b) => b.similarity - a.similarity);
-
-  // Si no hay coincidencias perfectas, retornar los primeros chunks (orden natural de la BD)
-  if (scored.filter(c => c.similarity > 0.2).length === 0) {
-    console.log(`No exact keyword matches for question, returning first ${limit} chunks from all documents`);
-    return scored.slice(0, limit);
-  }
-
-  return scored.filter(c => c.similarity > 0.1).slice(0, limit);
-}
-
-function buildFallbackAnswer(question: string, chunks: ChunkWithSimilarity[]): string {
-  if (chunks.length === 0 || !chunks.some(c => c.similarity > 0.3)) {
-    return "Lo siento, no he encontrado información específica en los documentos actuales que responda a tu pregunta. ¿Podrías ser más específico o indicarme sobre qué área (académica, convivencia, etc.) deseas consultar?";
-  }
-
-  const sources = [...new Set(chunks.map((chunk) => chunk.document_id))].join(', ');
-  return `He encontrado algunas menciones relacionadas en los documentos (${sources}), pero no una respuesta exacta. 
-
-Por favor, verifica si tu consulta se refiere a uno de estos temas o intenta reformularla para ser más preciso. ¿Hay algún documento en particular que te gustaría que revise?`;
-}
-
-/**
- * Buscar chunks similares a una pregunta usando pgvector
- */
-export async function findSimilarChunks(
-  question: string,
-  limit: number = 5
-): Promise<ChunkWithSimilarity[]> {
-  try {
-    // Generar embedding para la pregunta
-    const questionEmbedding = await generateEmbedding(question);
-
-    // Buscar chunks similares usando pgvector
-    const db = supabaseAdmin || supabaseClient;
-    const { data, error } = await db.rpc('match_documents', {
-      query_embedding: questionEmbedding,
-      match_count: limit,
-      match_threshold: 0.2,
-    });
-
-    if (error) {
-      console.error('Error matching documents:', error);
-      throw error;
-    }
-
-    return data as ChunkWithSimilarity[];
-  } catch (error) {
-    console.error('Error finding similar chunks:', error);
-    throw error;
-  }
-}
-
 /**
  * Procesar una consulta de usuario y generar respuesta con IA
  */
@@ -274,7 +120,7 @@ export async function processUserQuery(
   const queryId = `query_${Date.now()}`;
 
   try {
-    // Crear registro de consulta
+    // 1. Crear registro de consulta
     const { data: queryData, error: queryError } = await supabaseAdmin
       .from('ai_queries')
       .insert([
@@ -293,125 +139,70 @@ export async function processUserQuery(
       throw new Error(`Failed to create query record: ${queryError.message}`);
     }
 
-    // Buscar primero por texto para no depender de Gemini/embeddings en cada consulta.
-    let similarChunks: ChunkWithSimilarity[] = await findKeywordChunks(question, userRole, 5);
-    console.log(`[processUserQuery] findKeywordChunks returned ${similarChunks.length} chunks`);
-
-    if (similarChunks.length === 0 && isVectorSearchEnabled()) {
-      try {
-        console.log(`[processUserQuery] No keyword chunks found, trying vector search...`);
-        similarChunks = await findSimilarChunks(question, 5);
-        console.log(`[processUserQuery] Vector search returned ${similarChunks.length} chunks`);
-      } catch (error) {
-        console.warn('[processUserQuery] Error finding similar chunks:', error);
-        // Continuar sin chunks si hay error en la busqueda vectorial.
-      }
-    }
-
-    // Filtrar por permisos de acceso
-    const allowedChunks: ChunkWithSimilarity[] = [];
-    for (const chunk of similarChunks) {
-      const hasAccess = await checkDocumentAccess(chunk.document_id, userRole, 'ask');
-      if (hasAccess) {
-        allowedChunks.push(chunk);
-      }
-    }
-    console.log(`[processUserQuery] Permission check: ${allowedChunks.length} allowed out of ${similarChunks.length} chunks`);
-
-    // Si no hay chunks permitidos, pero hay chunks de documentos, usarlos como fallback
-    // (Esto permite que documentos recién creados, sin políticas de acceso explícitas, se usen)
-    if (allowedChunks.length === 0 && similarChunks.length > 0) {
-      console.warn(`No allowed chunks by permission check, but ${similarChunks.length} chunks exist. Using as fallback.`);
-      allowedChunks.push(...similarChunks);
-    }
-
-    // Si aún no hay chunks, usar built-in
-    if (allowedChunks.length === 0 && similarChunks.some((chunk) => chunk.id.startsWith('builtin_'))) {
-      allowedChunks.push(...similarChunks.filter((chunk) => chunk.id.startsWith('builtin_')));
-    }
-
-    if (allowedChunks.length === 0) {
-      allowedChunks.push(...findBuiltInChunks(question, 5));
-    }
-
-    const hasDocumentMatch = allowedChunks.some((chunk) => chunk.similarity > 0);
-
-    // Obtener documentos completos asociados a los chunks
-    const uniqueDocIds = hasDocumentMatch ? [...new Set(allowedChunks.map((c) => c.document_id))] : [];
-    const { data: documents, error: docError } = await supabaseAdmin
-      .from('documents')
-      .select('*')
-      .in('id', uniqueDocIds);
-
-    if (docError) {
-      console.warn('Error fetching documents:', docError);
-    }
-
-    // Preparar contexto para la IA
-    const contextTexts = hasDocumentMatch ? allowedChunks.map((chunk) => chunk.text) : [];
-    const sourceDocIds = uniqueDocIds;
-
-    // Generar respuesta con IA
+    // 2. OBTENER CONTEXTO COMPLETO (Full Context Approach)
+    // En lugar de buscar chunks similares, traemos TODOS los documentos permitidos para este rol.
+    console.log(`[processUserQuery] Fetching ALL allowed documents for role: ${userRole}`);
+    const { text: fullContext, documentNames } = await getAllAllowedDocumentsText(userRole);
+    
+    const hasDocuments = fullContext.trim().length > 0;
+    
+    // 3. Generar respuesta con IA
     let answer = '';
     let tokensUsed = { input: 0, output: 0 };
 
-    if (contextTexts.length > 0 && hasDocumentMatch) {
-      const systemPrompt = `Eres un asistente de políticas escolares experto. Tu objetivo es proporcionar respuestas precisas, concisas y útiles basadas EXCLUSIVAMENTE en los documentos proporcionados.
+    if (hasDocuments) {
+      const systemPrompt = `Eres el Asistente Inteligente de la Escuela Bilingüe Maquilishuat (EBM). 
+Tu objetivo es proporcionar respuestas precisas, amables y basadas EXCLUSIVAMENTE en los documentos institucionales proporcionados.
 
-Sigue estas reglas estrictas:
-1. CONCISIÓN: Responde directamente. No repitas fragmentos de texto de forma literal ni innecesaria.
-2. CITAS: Cita SOLO los documentos que realmente contienen la respuesta.
-3. INTERACCIÓN: Termina siempre con 1 o 2 preguntas breves para ayudar al usuario o profundizar en el tema.
-4. CALIDAD: Si la información en los documentos es contradictoria o insuficiente para dar una respuesta clara, indícalo y pregunta detalles adicionales para ayudar mejor.
-5. TONO: Profesional y amable.`;
+REGLAS CRÍTICAS:
+1. FUENTES: Tienes acceso a todos los manuales, políticas y el calendario escolar. Úsalos para responder.
+2. CALENDARIO: Si te preguntan por fechas, revisa cuidadosamente el "Documento: Calendar". Ten en cuenta que puede estar en inglés o español.
+3. CONCISIÓN: Responde de forma directa. No repitas todo el texto.
+4. CITAS: Al final de tu respuesta, menciona qué documentos utilizaste como referencia (ej: "Referencia: Manual de Convivencia, Calendario Escolar").
+5. LENGUAJE: Si el documento está en inglés pero la pregunta es en español, traduce la información relevante para el usuario.
+6. INCERTIDUMBRE: Si la información NO está en los documentos, indícalo educadamente y sugiere contactar a la oficina correspondiente.`;
 
       try {
-        const result = await generateResponse(question, contextTexts, systemPrompt);
+        const result = await generateResponse(question, [fullContext], systemPrompt);
         answer = result.answer;
         tokensUsed = result.tokensUsed;
       } catch (error) {
         console.error('Gemini API Error:', error);
-        answer = "Lo siento, tengo dificultades técnicas para procesar tu respuesta con inteligencia artificial en este momento. Por favor, intenta de nuevo en unos minutos.";
+        answer = "Lo siento, tengo dificultades técnicas para procesar tu respuesta en este momento. Por favor, intenta de nuevo en unos minutos.";
       }
     } else {
-      answer = "No he encontrado información específica en el repositorio de documentos que responda a tu pregunta. ¿Te gustaría consultar sobre algún otro tema o que te ayude a contactar con el área responsable?";
+      // Fallback a built-in chunks si no hay documentos en la BD
+      console.log("[processUserQuery] No documents in DB, falling back to built-in chunks");
+      const similarChunks = findBuiltInChunks(question, 3);
+      const contextTexts = similarChunks.map(c => c.text);
+      
+      const result = await generateResponse(question, contextTexts, "Responde usando solo esta información básica.");
+      answer = result.answer;
+      tokensUsed = result.tokensUsed;
     }
 
-    // Actualizar registro de consulta con respuesta
-    const { error: updateError } = await supabaseAdmin
+    // 4. Actualizar registro de consulta
+    await supabaseAdmin
       .from('ai_queries')
       .update({
         answer,
-        source_documents: sourceDocIds,
-        source_chunks: allowedChunks.map((c) => c.id),
-        model_used: 'gemini-pro',
+        source_documents: documentNames,
+        model_used: 'gemini-1.5-flash',
         tokens_used: tokensUsed,
-        error_message: hasDocumentMatch ? null : 'NO_DOCUMENT_MATCH',
         status: 'completed',
         completed_at: new Date().toISOString(),
       })
       .eq('id', queryId);
 
-    if (updateError) {
-      console.warn('Error updating query record:', updateError);
-    }
-
-    // Registrar auditoría de acceso
-    for (const docId of sourceDocIds) {
-      await logDocumentAccess(docId, userId, 'query', `Query: ${question}`, ipAddress);
-    }
-
     return {
       queryId,
       question,
       answer,
-      sourceDocuments: sourceDocIds,
+      sourceDocuments: documentNames,
       tokensUsed,
     };
   } catch (error) {
     console.error('Error processing user query:', error);
-
-    // Actualizar query con error
     if (supabaseAdmin) {
       await supabaseAdmin
         .from('ai_queries')
@@ -422,7 +213,6 @@ Sigue estas reglas estrictas:
         })
         .eq('id', queryId);
     }
-
     throw error;
   }
 }

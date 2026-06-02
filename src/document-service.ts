@@ -2,8 +2,8 @@ import { supabaseClient, supabaseAdmin } from './supabase';
 export { supabaseAdmin };
 import { generateEmbedding } from './gemini';
 import { Document, DocumentChunk } from './supabase-types';
-import pdf from 'pdf-parse';
-import mammoth from 'mammoth';
+const pdf = require('pdf-parse');
+const mammoth = require('mammoth');
 
 type EditableDocumentType = 'policy' | 'manual' | 'procedure' | 'handbook' | 'other';
 type DocumentStatus = 'active' | 'archived' | 'draft' | 'review';
@@ -249,6 +249,79 @@ export async function updateDocument(
   await logDocumentAccess(documentId, updates.updatedBy, 'update', `Updated document ${updates.name}`);
 
   return document as Document;
+}
+
+/**
+ * Obtener todo el texto de todos los documentos permitidos para un rol
+ */
+export async function getAllAllowedDocumentsText(
+  roleId: string,
+  accessLevel: 'view' | 'search' | 'ask' = 'ask'
+): Promise<{ text: string; documentNames: string[] }> {
+  try {
+    const db = supabaseAdmin || supabaseClient;
+    
+    // 1. Obtener IDs de documentos permitidos por política
+    const { data: policyData, error: policyError } = await db
+      .from('document_access_policies')
+      .select('document_id')
+      .eq('role_id', roleId);
+
+    if (policyError) throw policyError;
+
+    let documentIds = (policyData || []).map((d: any) => d.document_id);
+
+    // 2. Si no hay políticas específicas, intentar obtener documentos activos (fallback de seguridad)
+    if (documentIds.length === 0) {
+      const { data: activeDocs } = await db
+        .from('documents')
+        .select('id')
+        .eq('status', 'active');
+      documentIds = (activeDocs || []).map((d: any) => d.id);
+    }
+
+    if (documentIds.length === 0) {
+      return { text: '', documentNames: [] };
+    }
+
+    // 3. Obtener metadatos y chunks de esos documentos
+    const { data: documents, error: docError } = await db
+      .from('documents')
+      .select('id, name')
+      .in('id', documentIds)
+      .eq('status', 'active');
+
+    if (docError) throw docError;
+
+    const { data: chunks, error: chunksError } = await db
+      .from('document_chunks')
+      .select('document_id, text')
+      .in('document_id', documentIds)
+      .order('document_id', { ascending: true })
+      .order('chunk_number', { ascending: true });
+
+    if (chunksError) throw chunksError;
+
+    // 4. Agrupar texto por documento para mantener coherencia
+    const docTexts: string[] = [];
+    const documentNames = (documents || []).map(d => d.name);
+
+    for (const doc of documents || []) {
+      const docChunks = (chunks || []).filter(c => c.document_id === doc.id);
+      if (docChunks.length > 0) {
+        const fullDocText = docChunks.map(c => c.text).join(' ');
+        docTexts.push(`DOCUMENTO: ${doc.name}\nCONTENIDO:\n${fullDocText}\n---`);
+      }
+    }
+
+    return {
+      text: docTexts.join('\n\n'),
+      documentNames
+    };
+  } catch (error) {
+    console.error('Error in getAllAllowedDocumentsText:', error);
+    return { text: '', documentNames: [] };
+  }
 }
 
 /**
