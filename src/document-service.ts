@@ -261,7 +261,7 @@ export async function getAllAllowedDocumentsText(
   try {
     const db = supabaseAdmin || supabaseClient;
     
-    // 1. Obtener IDs de documentos permitidos por política
+    // 1. Obtener IDs únicos de documentos permitidos por política
     const { data: policyData, error: policyError } = await db
       .from('document_access_policies')
       .select('document_id')
@@ -269,7 +269,7 @@ export async function getAllAllowedDocumentsText(
 
     if (policyError) throw policyError;
 
-    let documentIds = (policyData || []).map((d: any) => d.document_id);
+    let documentIds = [...new Set((policyData || []).map((d: any) => d.document_id))];
 
     // 2. Si no hay políticas específicas, intentar obtener documentos activos (fallback de seguridad)
     if (documentIds.length === 0) {
@@ -284,7 +284,7 @@ export async function getAllAllowedDocumentsText(
       return { text: '', documentNames: [] };
     }
 
-    // 3. Obtener metadatos y chunks de esos documentos
+    // 3. Obtener metadatos y chunks de esos documentos (solo activos)
     const { data: documents, error: docError } = await db
       .from('documents')
       .select('id, name')
@@ -292,12 +292,15 @@ export async function getAllAllowedDocumentsText(
       .eq('status', 'active');
 
     if (docError) throw docError;
+    
+    // Filtrar IDs para quedarnos solo con los que están activos
+    const activeIds = (documents || []).map(d => d.id);
+    if (activeIds.length === 0) return { text: '', documentNames: [] };
 
     const { data: chunks, error: chunksError } = await db
       .from('document_chunks')
       .select('document_id, text')
-      .in('document_id', documentIds)
-      .order('document_id', { ascending: true })
+      .in('document_id', activeIds)
       .order('chunk_number', { ascending: true });
 
     if (chunksError) throw chunksError;
