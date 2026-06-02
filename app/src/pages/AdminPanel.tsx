@@ -95,9 +95,15 @@ const AdminPanel: React.FC = () => {
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
   const [isLoadingApprovals, setIsLoadingApprovals] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([{
+    id: '0',
+    text: `Hola, soy tu asistente de IA. ¿Qué política o normativa deseas consultar hoy?`,
+    sender: 'ai',
+    timestamp: new Date()
+  }]);
   const [chatInput, setChatInput] = useState('');
   const [isChatTyping, setIsChatTyping] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<'docs' | 'chat'>('docs');
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -304,23 +310,50 @@ const AdminPanel: React.FC = () => {
   };
 
   useEffect(() => {
-    loadDocuments();
-    loadUnansweredQueries();
-    loadStatistics();
-    loadRecommendations();
-    loadInsights();
-    loadApprovals();
+    if (!auth?.token || !auth?.user) return;
 
-    // Inicializar chat si no hay mensajes
-    if (messages.length === 0) {
-      setMessages([{
-        id: '1',
-        text: `Hola ${auth?.user?.name || 'Administrador'}, soy tu asistente de IA. ¿Qué política o normativa deseas consultar hoy?`,
-        sender: 'ai',
-        timestamp: new Date()
-      }]);
-    }
-  }, [apiBaseUrl, authHeaders, auth?.user?.id, role]);
+    const loadAllData = async () => {
+      try {
+        await loadDocuments();
+      } catch (e) {
+        console.error('Error loading documents:', e);
+      }
+
+      try {
+        await loadUnansweredQueries();
+      } catch (e) {
+        console.error('Error loading unanswered queries:', e);
+      }
+
+      try {
+        await loadStatistics();
+      } catch (e) {
+        console.error('Error loading statistics:', e);
+      }
+
+      try {
+        await loadRecommendations();
+      } catch (e) {
+        console.error('Error loading recommendations:', e);
+      }
+
+      try {
+        await loadInsights();
+      } catch (e) {
+        console.error('Error loading insights:', e);
+      }
+
+      if (role === 'directivo') {
+        try {
+          await loadApprovals();
+        } catch (e) {
+          console.error('Error loading approvals:', e);
+        }
+      }
+    };
+
+    loadAllData();
+  }, [apiBaseUrl, authHeaders, auth?.token, auth?.user?.id, role]);
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -332,6 +365,7 @@ const AdminPanel: React.FC = () => {
     e.preventDefault();
     if (!chatInput.trim() || isChatTyping) return;
 
+    setChatError(null);
     const userMsg: Message = {
       id: Date.now().toString(),
       text: chatInput,
@@ -345,6 +379,10 @@ const AdminPanel: React.FC = () => {
     setIsChatTyping(true);
 
     try {
+      if (!apiBaseUrl) {
+        throw new Error('API URL no configurada. Por favor, recarga la página.');
+      }
+
       const response = await fetch(`${apiBaseUrl}/api/policies/ask`, {
         method: 'POST',
         headers: { 
@@ -369,10 +407,12 @@ const AdminPanel: React.FC = () => {
       };
       setMessages(prev => [...prev, aiMsg]);
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Error desconocido';
       console.error('Chat error:', error);
+      setChatError(errorMsg);
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
-        text: 'Lo siento, hubo un error al procesar tu consulta. Inténtalo de nuevo.',
+        text: `Error: ${errorMsg}. Por favor, inténtalo de nuevo.`,
         sender: 'ai',
         timestamp: new Date()
       }]);
@@ -809,27 +849,40 @@ const AdminPanel: React.FC = () => {
           ) : (
             /* CHAT INTERFACE TAB */
             <section style={{ display: 'flex', flexDirection: 'column', height: '600px', backgroundColor: 'var(--white)', borderRadius: 'var(--radius-md)', border: '1px solid var(--nickel-medium)', overflow: 'hidden' }}>
+              {chatError && (
+                <div style={{ padding: '0.75rem 1rem', backgroundColor: '#fef2f2', borderBottom: '1px solid #fecaca', color: '#991b1b', fontSize: '0.875rem' }}>
+                  ⚠️ {chatError}
+                </div>
+              )}
               <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', backgroundColor: '#f8fafc' }}>
-                {messages.map((msg) => (
-                  <div key={msg.id} style={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
-                    <div style={{ 
-                      padding: '0.75rem 1rem', 
-                      borderRadius: '12px', 
-                      backgroundColor: msg.sender === 'user' ? 'var(--primary-blue)' : 'var(--white)',
-                      color: msg.sender === 'user' ? 'white' : 'var(--text-dark)',
-                      boxShadow: 'var(--shadow-sm)',
-                      border: msg.sender === 'user' ? 'none' : '1px solid var(--nickel-medium)',
-                      fontSize: '0.9rem'
-                    }}>
-                      {msg.text}
-                      {msg.reference && (
-                        <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(0,0,0,0.1)', fontSize: '0.75rem', fontWeight: 600 }}>
-                          {msg.reference}
+                {messages && messages.length > 0 ? (
+                  <>
+                    {messages.map((msg) => (
+                      <div key={msg.id} style={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                        <div style={{ 
+                          padding: '0.75rem 1rem', 
+                          borderRadius: '12px', 
+                          backgroundColor: msg.sender === 'user' ? 'var(--primary-blue)' : 'var(--white)',
+                          color: msg.sender === 'user' ? 'white' : 'var(--text-dark)',
+                          boxShadow: 'var(--shadow-sm)',
+                          border: msg.sender === 'user' ? 'none' : '1px solid var(--nickel-medium)',
+                          fontSize: '0.9rem'
+                        }}>
+                          {msg.text}
+                          {msg.reference && (
+                            <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid rgba(0,0,0,0.1)', fontSize: '0.75rem', fontWeight: 600 }}>
+                              {msg.reference}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <div style={{ textAlign: 'center', color: '#64748b', paddingTop: '2rem' }}>
+                    Inicia una conversación escribiendo tu pregunta...
                   </div>
-                ))}
+                )}
                 {isChatTyping && (
                   <div style={{ alignSelf: 'flex-start', color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic' }}>
                     La IA está respondiendo...
@@ -844,8 +897,9 @@ const AdminPanel: React.FC = () => {
                   onChange={(e) => setChatInput(e.target.value)}
                   placeholder="Realiza una consulta interna sobre las políticas..."
                   style={{ flex: 1, borderRadius: 'var(--radius-md)', border: '1px solid var(--nickel-medium)', padding: '0.6rem' }}
+                  disabled={isChatTyping}
                 />
-                <button type="submit" disabled={isChatTyping} style={{ backgroundColor: 'var(--action-green)', color: 'white', border: 'none', padding: '0 1.25rem', borderRadius: 'var(--radius-md)', fontWeight: 600 }}>
+                <button type="submit" disabled={isChatTyping} style={{ backgroundColor: 'var(--action-green)', color: 'white', border: 'none', padding: '0 1.25rem', borderRadius: 'var(--radius-md)', fontWeight: 600, opacity: isChatTyping ? 0.7 : 1, cursor: isChatTyping ? 'not-allowed' : 'pointer' }}>
                   Enviar
                 </button>
               </form>
