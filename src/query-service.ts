@@ -162,13 +162,15 @@ REGLAS CRÍTICAS:
 5. LENGUAJE: Traduce la información del inglés al español si es necesario.
 6. INCERTIDUMBRE: Si la información NO está, dilo claramente.`;
 
-      try {
-        const result = await generateResponse(question, [fullContext], systemPrompt);
-        answer = result.answer;
-        tokensUsed = result.tokensUsed;
       } catch (error) {
         console.error('Gemini API Error:', error);
-        answer = "Lo siento, tengo dificultades técnicas para procesar tu respuesta en este momento. Por favor, intenta de nuevo en unos minutos.";
+        if (error instanceof Error && error.message.includes('LIMITE_EXCEDIDO')) {
+          answer = "He alcanzado mi límite de procesamiento por este minuto debido al gran volumen de documentos. Por favor, espera 60 segundos y vuelve a intentar.";
+        } else if (error instanceof Error && error.message.includes('CONTENIDO_BLOQUEADO')) {
+          answer = "Lo siento, pero no puedo responder a esa pregunta debido a que el tema es sensible y ha activado los filtros de seguridad de la IA. Por favor, intenta reformularla de manera más general.";
+        } else {
+          answer = "Lo siento, tengo dificultades técnicas para procesar tu respuesta en este momento. Por favor, intenta de nuevo en unos minutos.";
+        }
       }
     } else {
       // Fallback a built-in chunks si no hay documentos en la BD

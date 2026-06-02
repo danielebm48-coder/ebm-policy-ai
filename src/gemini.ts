@@ -117,11 +117,25 @@ Por favor, responde de manera clara y directa, basándote en los documentos prop
       }
     );
 
-    if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.statusText}`);
+    const data = await response.json();
+    
+    if (data.error) {
+      const errorMsg = data.error.message || 'Error desconocido de la API de Gemini';
+      if (data.error.code === 429) {
+        throw new Error('LIMITE_EXCEDIDO: Demasiadas preguntas en poco tiempo. Por favor, espera un minuto antes de continuar.');
+      }
+      throw new Error(`Gemini API Error: ${errorMsg}`);
     }
 
-    const data = await response.json();
+    if (!data.candidates || data.candidates.length === 0) {
+      // Verificar si fue bloqueado por seguridad
+      const finishReason = data.promptFeedback?.blockReason || 'BLOQUEADO';
+      if (finishReason === 'SAFETY') {
+        throw new Error('CONTENIDO_BLOQUEADO: La pregunta o el contenido de los documentos ha activado los filtros de seguridad. Intenta reformular tu pregunta.');
+      }
+      throw new Error(`No se pudo generar una respuesta (Motivo: ${finishReason})`);
+    }
+
     const answer = data.candidates[0].content.parts[0].text;
     const tokensUsed = {
       input: data.usageMetadata?.promptTokenCount || 0,
