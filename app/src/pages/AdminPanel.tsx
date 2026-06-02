@@ -858,7 +858,7 @@ const AdminPanel: React.FC = () => {
                 </div>
               )}
               <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', backgroundColor: '#f8fafc' }}>
-                {messages && messages.length > 0 ? (
+                {Array.isArray(messages) && messages.length > 0 ? (
                   <>
                     {messages.map((msg) => (
                       <div key={msg.id} style={{ alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
@@ -1121,6 +1121,14 @@ const AdminPanel: React.FC = () => {
             </div>
           </form>
         </div>
+      )}
+    </Layout>
+  );
+};
+
+export default AdminPanel;
+fault AdminPanel;
+div>
       )}
     </Layout>
   );

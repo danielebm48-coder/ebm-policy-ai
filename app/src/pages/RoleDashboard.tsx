@@ -138,7 +138,7 @@ const RoleDashboard: React.FC = () => {
           border: '1px solid var(--nickel-medium)',
           borderBottom: 'none'
         }}>
-          {messages.map((msg) => (
+          {Array.isArray(messages) && messages.map((msg) => (
             <div 
               key={msg.id} 
               style={{ 
