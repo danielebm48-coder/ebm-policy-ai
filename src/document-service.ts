@@ -284,32 +284,42 @@ export async function getAllAllowedDocumentsText(
       return { text: '', documentNames: [] };
     }
 
-    // 3. Obtener metadatos y chunks de esos documentos (solo activos)
+    // 3. Obtener metadatos de documentos activos
     const { data: documents, error: docError } = await db
       .from('documents')
-      .select('id, name')
+      .select('id, name, last_updated')
       .in('id', documentIds)
       .eq('status', 'active');
 
     if (docError) throw docError;
-    
-    // Filtrar IDs para quedarnos solo con los que están activos
-    const activeIds = (documents || []).map(d => d.id);
-    if (activeIds.length === 0) return { text: '', documentNames: [] };
+    if (!documents || documents.length === 0) return { text: '', documentNames: [] };
 
+    // DEDUPLICACIÓN POR NOMBRE: Solo tomar la versión más reciente de cada documento con el mismo nombre
+    const uniqueDocsMap = new Map<string, any>();
+    for (const doc of documents) {
+      const existing = uniqueDocsMap.get(doc.name);
+      if (!existing || new Date(doc.last_updated) > new Date(existing.last_updated)) {
+        uniqueDocsMap.set(doc.name, doc);
+      }
+    }
+    
+    const uniqueDocuments = Array.from(uniqueDocsMap.values());
+    const uniqueIds = uniqueDocuments.map(d => d.id);
+    const documentNames = uniqueDocuments.map(d => d.name);
+
+    // 4. Obtener chunks solo de los documentos únicos
     const { data: chunks, error: chunksError } = await db
       .from('document_chunks')
       .select('document_id, text')
-      .in('document_id', activeIds)
+      .in('document_id', uniqueIds)
       .order('chunk_number', { ascending: true });
 
     if (chunksError) throw chunksError;
 
-    // 4. Agrupar texto por documento para mantener coherencia
+    // 5. Agrupar texto
     const docTexts: string[] = [];
-    const documentNames = (documents || []).map(d => d.name);
 
-    for (const doc of documents || []) {
+    for (const doc of uniqueDocuments) {
       const docChunks = (chunks || []).filter(c => c.document_id === doc.id);
       if (docChunks.length > 0) {
         const fullDocText = docChunks.map(c => c.text).join(' ');
@@ -319,7 +329,8 @@ export async function getAllAllowedDocumentsText(
 
     return {
       text: docTexts.join('\n\n'),
-      documentNames
+      documentNames: [] // Retornamos vacío para que el frontend no muestre la lista si así se prefiere,
+                        // o podemos dejarlo y que el servicio de consulta decida.
     };
   } catch (error) {
     console.error('Error in getAllAllowedDocumentsText:', error);

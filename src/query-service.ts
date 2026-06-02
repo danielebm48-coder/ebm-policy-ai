@@ -198,7 +198,7 @@ REGLAS CRÍTICAS:
       queryId,
       question,
       answer,
-      sourceDocuments: documentNames,
+      sourceDocuments: [], // Cambiado a vacío para ocultar la lista en la interfaz
       tokensUsed,
     };
   } catch (error) {
