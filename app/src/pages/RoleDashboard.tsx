@@ -101,9 +101,9 @@ const RoleDashboard: React.FC = () => {
 
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
-        text: result.answer,
+        text: result?.answer || 'Lo siento, no pude generar una respuesta.',
         sender: 'ai',
-        reference: result.sourceDocuments && result.sourceDocuments.length > 0 
+        reference: (result?.sourceDocuments && Array.isArray(result.sourceDocuments) && result.sourceDocuments.length > 0)
           ? `Documentos: ${result.sourceDocuments.join(', ')}` 
           : "Base de Conocimiento EBM",
         timestamp: new Date()

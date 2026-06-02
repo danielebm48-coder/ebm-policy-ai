@@ -401,9 +401,11 @@ const AdminPanel: React.FC = () => {
       const result = data.data;
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
-        text: result.answer,
+        text: result?.answer || 'Lo siento, no pude generar una respuesta.',
         sender: 'ai',
-        reference: result.sourceDocuments?.length > 0 ? `Fuentes: ${result.sourceDocuments.join(', ')}` : undefined,
+        reference: (result?.sourceDocuments && Array.isArray(result.sourceDocuments) && result.sourceDocuments.length > 0) 
+          ? `Fuentes: ${result.sourceDocuments.join(', ')}` 
+          : undefined,
         timestamp: new Date()
       };
       setMessages(prev => [...prev, aiMsg]);
