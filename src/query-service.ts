@@ -110,6 +110,7 @@ async function findKeywordChunks(
   limit: number = 5
 ): Promise<ChunkWithSimilarity[]> {
   const db = supabaseAdmin || supabaseClient;
+  console.log(`[findKeywordChunks] Searching for: "${question.substring(0, 50)}..." for role: ${userRole}`);
   
   // Intentar obtener documentos por políticas de acceso
   const { data: accessRows, error: accessError } = await db
@@ -122,27 +123,28 @@ async function findKeywordChunks(
   
   if (!accessError && accessRows && accessRows.length > 0) {
     documentIds = [...new Set((accessRows || []).map((row: any) => row.document_id))];
-    console.log(`Found ${documentIds.length} document IDs from access policies for role ${userRole}`);
+    console.log(`[findKeywordChunks] Found ${documentIds.length} document IDs from access policies for role ${userRole}`);
   }
 
   // Si no hay políticas de acceso, buscar documentos activos por defecto
   if (documentIds.length === 0) {
-    console.log(`No access policies found for role ${userRole}, fetching active documents...`);
+    console.log(`[findKeywordChunks] No access policies found for role ${userRole}, fetching all active documents...`);
     const { data: activeDocuments, error: docError } = await db
       .from('documents')
-      .select('id')
+      .select('id, name')
       .eq('status', 'active')
       .limit(100);
     
     if (!docError && activeDocuments && activeDocuments.length > 0) {
       documentIds = [...new Set((activeDocuments || []).map((row: any) => row.id))];
-      console.log(`Found ${documentIds.length} active documents`);
+      const docNames = (activeDocuments || []).map((d: any) => d.name).join(', ');
+      console.log(`[findKeywordChunks] Found ${documentIds.length} active documents: ${docNames}`);
     }
   }
 
   // Si aún no hay documentos, retornar built-in chunks
   if (documentIds.length === 0) {
-    console.warn('No documents found for search, returning built-in chunks');
+    console.warn('[findKeywordChunks] No documents found for search, returning built-in chunks');
     return findBuiltInChunks(question, limit);
   }
 
@@ -154,16 +156,23 @@ async function findKeywordChunks(
     .limit(200);
 
   if (chunksError) {
-    console.error('Error fetching chunks:', chunksError);
-    return findBuiltInChunks(question, limit);
+    console.error('[findKeywordChunks] Error fetching chunks:', chunksError);
+    // Si hay documentos reales pero falla la consulta de chunks, no usar contenido incorporado.
+    return documentIds.length > 0 ? [] : findBuiltInChunks(question, limit);
   }
 
   if (!chunks || chunks.length === 0) {
-    console.warn(`No chunks found for documents ${documentIds.join(', ')}`);
+    if (documentIds.length > 0) {
+      console.warn(`[findKeywordChunks] Documents found (${documentIds.length}), but no chunks exist yet for those documents.`);
+      return [];
+    }
+
+    console.warn('[findKeywordChunks] No documents found for search, returning built-in chunks');
     return findBuiltInChunks(question, limit);
   }
 
-  console.log(`Found ${chunks.length} chunks from ${documentIds.length} documents`);
+  console.log(`[findKeywordChunks] Found ${chunks.length} chunks from ${documentIds.length} documents`);
+
 
   const tokens = tokenizeQuestion(question);
   if (tokens.length === 0) {
@@ -286,12 +295,15 @@ export async function processUserQuery(
 
     // Buscar primero por texto para no depender de Gemini/embeddings en cada consulta.
     let similarChunks: ChunkWithSimilarity[] = await findKeywordChunks(question, userRole, 5);
+    console.log(`[processUserQuery] findKeywordChunks returned ${similarChunks.length} chunks`);
 
     if (similarChunks.length === 0 && isVectorSearchEnabled()) {
       try {
+        console.log(`[processUserQuery] No keyword chunks found, trying vector search...`);
         similarChunks = await findSimilarChunks(question, 5);
+        console.log(`[processUserQuery] Vector search returned ${similarChunks.length} chunks`);
       } catch (error) {
-        console.warn('Error finding similar chunks:', error);
+        console.warn('[processUserQuery] Error finding similar chunks:', error);
         // Continuar sin chunks si hay error en la busqueda vectorial.
       }
     }
@@ -304,6 +316,7 @@ export async function processUserQuery(
         allowedChunks.push(chunk);
       }
     }
+    console.log(`[processUserQuery] Permission check: ${allowedChunks.length} allowed out of ${similarChunks.length} chunks`);
 
     // Si no hay chunks permitidos, pero hay chunks de documentos, usarlos como fallback
     // (Esto permite que documentos recién creados, sin políticas de acceso explícitas, se usen)
