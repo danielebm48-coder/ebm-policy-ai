@@ -110,42 +110,73 @@ async function findKeywordChunks(
   limit: number = 5
 ): Promise<ChunkWithSimilarity[]> {
   const db = supabaseAdmin || supabaseClient;
+  
+  // Intentar obtener documentos por políticas de acceso
   const { data: accessRows, error: accessError } = await db
     .from('document_access_policies')
     .select('document_id')
     .eq('role_id', userRole)
     .in('access_level', ['ask', 'search', 'view']);
 
-  if (accessError) {
-    console.warn('Error fetching document access policies:', accessError);
-    return [];
+  let documentIds: string[] = [];
+  
+  if (!accessError && accessRows && accessRows.length > 0) {
+    documentIds = [...new Set((accessRows || []).map((row: any) => row.document_id))];
+    console.log(`Found ${documentIds.length} document IDs from access policies for role ${userRole}`);
   }
 
-  const documentIds = [...new Set((accessRows || []).map((row: any) => row.document_id))];
+  // Si no hay políticas de acceso, buscar documentos activos por defecto
   if (documentIds.length === 0) {
-    // Si no hay politicas definidas, buscar en documentos activos por defecto
-    const { data: activeDocuments } = await db
+    console.log(`No access policies found for role ${userRole}, fetching active documents...`);
+    const { data: activeDocuments, error: docError } = await db
       .from('documents')
       .select('id')
       .eq('status', 'active')
-      .limit(50);
-    documentIds.push(...[...new Set((activeDocuments || []).map((row: any) => row.id))]);
+      .limit(100);
+    
+    if (!docError && activeDocuments && activeDocuments.length > 0) {
+      documentIds = [...new Set((activeDocuments || []).map((row: any) => row.id))];
+      console.log(`Found ${documentIds.length} active documents`);
+    }
   }
 
+  // Si aún no hay documentos, retornar built-in chunks
   if (documentIds.length === 0) {
+    console.warn('No documents found for search, returning built-in chunks');
     return findBuiltInChunks(question, limit);
   }
 
+  // Buscar chunks de los documentos encontrados
   const { data: chunks, error: chunksError } = await db
     .from('document_chunks')
     .select('id, document_id, text, chunk_number')
     .in('document_id', documentIds)
-    .limit(100);
+    .limit(200);
 
-  if (chunksError) return [];
+  if (chunksError) {
+    console.error('Error fetching chunks:', chunksError);
+    return findBuiltInChunks(question, limit);
+  }
+
+  if (!chunks || chunks.length === 0) {
+    console.warn(`No chunks found for documents ${documentIds.join(', ')}`);
+    return findBuiltInChunks(question, limit);
+  }
+
+  console.log(`Found ${chunks.length} chunks from ${documentIds.length} documents`);
 
   const tokens = tokenizeQuestion(question);
-  if (tokens.length === 0) return [];
+  if (tokens.length === 0) {
+    // Si no hay tokens relevantes, retornar todos los chunks como fallback
+    return chunks
+      .map((chunk: any) => ({
+        id: chunk.id,
+        document_id: chunk.document_id,
+        text: chunk.text,
+        similarity: 0.1,
+      }))
+      .slice(0, limit);
+  }
 
   const scored = (chunks || [])
     .map((chunk: any) => {
@@ -167,6 +198,19 @@ async function findKeywordChunks(
     })
     .filter(chunk => chunk.similarity > 0.2) // Filtro de relevancia minima
     .sort((a, b) => b.similarity - a.similarity);
+
+  // Si no hay coincidencias de palabras clave, retornar los primeros chunks del documento
+  if (scored.length === 0) {
+    console.log('No keyword matches found, returning first chunks from documents');
+    return (chunks || [])
+      .map((chunk: any) => ({
+        id: chunk.id,
+        document_id: chunk.document_id,
+        text: chunk.text,
+        similarity: 0.1,
+      }))
+      .slice(0, limit);
+  }
 
   return scored.slice(0, limit);
 }
