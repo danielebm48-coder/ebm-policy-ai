@@ -658,4 +658,73 @@ router.post('/documents/upload', requireAuth, upload.single('file'), async (req:
   }
 });
 
+// ===================================================================
+// DEBUGGING ENDPOINTS
+// ===================================================================
+
+router.get('/debug/documents-detailed', requireAuth, async (_req: AuthRequest, res: Response) => {
+  try {
+    const db = supabaseAdmin || supabaseClient;
+    
+    // Obtener todos los documentos
+    const { data: documents, error: docsError } = await db
+      .from('documents')
+      .select('id, name, status, type, category, created_at')
+      .order('created_at', { ascending: false });
+
+    if (docsError) {
+      throw docsError;
+    }
+
+    // Para cada documento, obtener el número de chunks
+    const documentDetails = [];
+    for (const doc of documents || []) {
+      const { count: chunkCount, error: countError } = await db
+        .from('document_chunks')
+        .select('id', { count: 'exact', head: true })
+        .eq('document_id', doc.id);
+
+      const { data: policies } = await db
+        .from('document_access_policies')
+        .select('role_id, access_level')
+        .eq('document_id', doc.id);
+
+      documentDetails.push({
+        ...doc,
+        chunks_count: countError ? 0 : chunkCount || 0,
+        access_policies: policies || [],
+      });
+    }
+
+    // Información general
+    const { data: allChunks, error: chunksError } = await db
+      .from('document_chunks')
+      .select('id', { count: 'exact', head: true });
+
+    const { data: allPolicies, error: policiesError } = await db
+      .from('document_access_policies')
+      .select('id', { count: 'exact', head: true });
+
+    res.json({
+      success: true,
+      summary: {
+        total_documents: documents?.length || 0,
+        total_chunks: chunksError ? 0 : (allChunks?.length || 0),
+        total_policies: policiesError ? 0 : (allPolicies?.length || 0),
+      },
+      documents: documentDetails,
+      notes: [
+        'This endpoint shows all documents and their chunk counts',
+        'Look for Calendar document and verify it has chunks',
+        'Check that document_access_policies exist for each document',
+      ],
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to fetch detailed document info',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
 export default router;
