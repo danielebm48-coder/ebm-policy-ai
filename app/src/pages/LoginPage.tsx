@@ -10,7 +10,7 @@ const LoginPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
-  const apiBaseUrl = (__API_BASE_URL__ || '').replace(/\/$/, '');
+  const apiBaseUrl = (__API_BASE_URL__ || window.location.origin || '').replace(/\/$/, '');
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();

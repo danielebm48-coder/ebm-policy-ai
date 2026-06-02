@@ -18,7 +18,7 @@ const RoleDashboard: React.FC = () => {
   const storedAuth = localStorage.getItem('schoolPolicyAuth');
   const auth = storedAuth ? JSON.parse(storedAuth) : null;
   const normalizedRole = auth?.user?.role || role || 'profesor';
-  const apiBaseUrl = (__API_BASE_URL__ || '').replace(/\/$/, '');
+  const apiBaseUrl = (__API_BASE_URL__ || window.location.origin || '').replace(/\/$/, '');
   const roleProfiles: Record<string, { userId: string; email: string }> = {
     admin: { userId: 'u_system', email: 'system@colegio.edu' },
     directivo: { userId: 'u_directivo', email: 'ana@colegio.edu' },

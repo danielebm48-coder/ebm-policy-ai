@@ -81,7 +81,7 @@ const AdminPanel: React.FC = () => {
     return storedAuth ? JSON.parse(storedAuth) : null;
   }, []);
   const role = auth?.user?.role;
-  const apiBaseUrl = (__API_BASE_URL__ || '').replace(/\/$/, '');
+  const apiBaseUrl = (__API_BASE_URL__ || window.location.origin || '').replace(/\/$/, '');
 
   const [documents, setDocuments] = useState<PolicyDocument[]>([]);
   const [unansweredQueries, setUnansweredQueries] = useState<UnansweredQuery[]>([]);

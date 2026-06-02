@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
     root: path.resolve(__dirname, 'app'),
     publicDir: path.resolve(__dirname, 'app/public'),
     define: {
-      __API_BASE_URL__: JSON.stringify(env.VITE_API_BASE_URL || ''),
+      __API_BASE_URL__: JSON.stringify(env.VITE_API_BASE_URL || env.API_URL || ''),
     },
     server: {
       port: 3000,
