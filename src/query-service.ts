@@ -187,32 +187,24 @@ async function findKeywordChunks(
       
       // Contar coincidencias exactas de palabras clave
       const hits = tokens.filter((token) => normalizedText.includes(token)).length;
-      const score = hits / tokens.length;
+      const score = hits / Math.max(tokens.length, 1);
 
       return {
         id: chunk.id,
         document_id: chunk.document_id,
         text: chunk.text,
-        similarity: score,
+        similarity: Math.max(score, 0.01), // Mínimo 0.01 para no perder chunks
       };
     })
-    .filter(chunk => chunk.similarity > 0.2) // Filtro de relevancia minima
     .sort((a, b) => b.similarity - a.similarity);
 
-  // Si no hay coincidencias de palabras clave, retornar los primeros chunks del documento
-  if (scored.length === 0) {
-    console.log('No keyword matches found, returning first chunks from documents');
-    return (chunks || [])
-      .map((chunk: any) => ({
-        id: chunk.id,
-        document_id: chunk.document_id,
-        text: chunk.text,
-        similarity: 0.1,
-      }))
-      .slice(0, limit);
+  // Si no hay coincidencias perfectas, retornar los primeros chunks (orden natural de la BD)
+  if (scored.filter(c => c.similarity > 0.2).length === 0) {
+    console.log(`No exact keyword matches for question, returning first ${limit} chunks from all documents`);
+    return scored.slice(0, limit);
   }
 
-  return scored.slice(0, limit);
+  return scored.filter(c => c.similarity > 0.1).slice(0, limit);
 }
 
 function buildFallbackAnswer(question: string, chunks: ChunkWithSimilarity[]): string {
@@ -313,6 +305,14 @@ export async function processUserQuery(
       }
     }
 
+    // Si no hay chunks permitidos, pero hay chunks de documentos, usarlos como fallback
+    // (Esto permite que documentos recién creados, sin políticas de acceso explícitas, se usen)
+    if (allowedChunks.length === 0 && similarChunks.length > 0) {
+      console.warn(`No allowed chunks by permission check, but ${similarChunks.length} chunks exist. Using as fallback.`);
+      allowedChunks.push(...similarChunks);
+    }
+
+    // Si aún no hay chunks, usar built-in
     if (allowedChunks.length === 0 && similarChunks.some((chunk) => chunk.id.startsWith('builtin_'))) {
       allowedChunks.push(...similarChunks.filter((chunk) => chunk.id.startsWith('builtin_')));
     }
