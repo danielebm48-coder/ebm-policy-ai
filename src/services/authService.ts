@@ -11,6 +11,7 @@ import {
   setUserActiveStatus
 } from '../repositories/userRepository';
 import { UserProfile, UserRole } from '../models';
+import { pool } from '../db';
 
 const fallbackUsers: UserWithPassword[] = [
   {

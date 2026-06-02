@@ -80,6 +80,30 @@ function tokenizeQuestion(question: string): string[] {
     .filter((token) => token.length > 2 && !stopWords.has(token));
 }
 
+function findBuiltInChunks(question: string, limit: number = 5): ChunkWithSimilarity[] {
+  const tokens = tokenizeQuestion(question);
+  if (tokens.length === 0) return BUILT_IN_CHUNKS.slice(0, limit);
+
+  const scored = BUILT_IN_CHUNKS
+    .map((chunk) => {
+      const normalizedText = String(chunk.text || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, '');
+
+      const hits = tokens.filter((token) => normalizedText.includes(token)).length;
+      const score = hits / Math.max(tokens.length, 1);
+
+      return { ...chunk, similarity: score } as ChunkWithSimilarity;
+    })
+    .filter((c) => c.similarity > 0)
+    .sort((a, b) => b.similarity - a.similarity);
+
+  if (scored.length === 0) return BUILT_IN_CHUNKS.slice(0, limit);
+  return scored.slice(0, limit);
+}
+
 async function findKeywordChunks(
   question: string,
   userRole: string,
