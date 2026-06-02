@@ -231,7 +231,8 @@ const AdminPanel: React.FC = () => {
         throw new Error(data.details || data.error || 'No se pudieron cargar las recomendaciones.');
       }
 
-      setRecommendations(data.data || null);
+      const recText = typeof data.data === 'string' ? data.data : data.data?.recommendations;
+      setRecommendations(recText || null);
     } catch (error) {
       console.error('Error loading recommendations:', error);
     } finally {
@@ -918,7 +919,7 @@ const AdminPanel: React.FC = () => {
               color: 'var(--text-dark)'
             }}>
               {isLoadingRecs ? 'Analizando consultas sin respuesta...' : (
-                <div dangerouslySetInnerHTML={{ __html: (recommendations || 'No hay recomendaciones suficientes todavia.').replace(/\n/g, '<br/>') }} />
+                <div dangerouslySetInnerHTML={{ __html: (typeof recommendations === 'string' ? recommendations : 'No hay recomendaciones suficientes todavia.').replace(/\n/g, '<br/>') }} />
               )}
             </div>
           </section>
