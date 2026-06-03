@@ -80,7 +80,7 @@ Por favor, responde de manera clara y directa basándote en los documentos.`;
 
   try {
     const response = await fetch(
-      `${GEMINI_API_URL}/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `${GEMINI_API_URL}/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: {

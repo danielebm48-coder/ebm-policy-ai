@@ -162,7 +162,7 @@ REGLAS DE ORO:
     await supabaseAdmin.from('ai_queries').update({
       answer,
       source_documents: documentNames,
-      model_used: 'gemini-1.5-flash-smart-rag',
+      model_used: 'gemini-3.5-flash-smart-rag',
       tokens_used: tokensUsed,
       status: 'completed',
       completed_at: new Date().toISOString()

@@ -966,7 +966,7 @@ const AdminPanel: React.FC = () => {
                   Sin datos de consulta.
                 </div>
               )}
-              {statistics?.most_consulted.map((doc) => (
+              {(statistics?.most_consulted || []).map((doc) => (
                 <div key={doc.id} style={{ padding: '0.9rem', backgroundColor: 'var(--white)', borderRadius: 'var(--radius-md)', border: '1px solid var(--nickel-medium)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{doc.name}</span>
                   <span style={{ fontSize: '0.75rem', backgroundColor: 'var(--nickel-light)', padding: '0.2rem 0.5rem', borderRadius: '1rem' }}>{doc.count} queries</span>
