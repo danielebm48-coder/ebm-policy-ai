@@ -1127,11 +1127,3 @@ const AdminPanel: React.FC = () => {
 };
 
 export default AdminPanel;
-fault AdminPanel;
-div>
-      )}
-    </Layout>
-  );
-};
-
-export default AdminPanel;
