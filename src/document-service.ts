@@ -1,12 +1,42 @@
 import { supabaseClient, supabaseAdmin } from './supabase';
 export { supabaseAdmin };
-import { generateEmbedding } from './gemini';
+import { generateEmbedding, generateResponse } from './gemini';
 import { Document, DocumentChunk } from './supabase-types';
 const pdf = require('pdf-parse');
 const mammoth = require('mammoth');
 
 type EditableDocumentType = 'policy' | 'manual' | 'procedure' | 'handbook' | 'other';
 type DocumentStatus = 'active' | 'archived' | 'draft' | 'review';
+
+/**
+ * Función para optimizar el contenido de un documento para RAG usando IA
+ */
+export async function optimizeContentWithIA(text: string, documentName: string): Promise<string> {
+  const systemPrompt = `Eres un Arquitecto de Conocimiento experto en Sistemas RAG (Retrieval-Augmented Generation).
+Tu misión es transformar el texto de un documento escolar en un formato "IA-Nativo".
+
+REGLAS DE TRANSFORMACIÓN:
+1. ESTRUCTURA: Usa encabezados claros y descriptivos (Ej: # PROCESO DE ADMISIÓN).
+2. ESPECIFICIDAD: Asegúrate de que cada párrafo sea autosuficiente. Evita "como se dijo antes".
+3. LIMPIEZA: Elimina pies de página, números de página, encabezados legales repetitivos y ruido visual.
+4. LISTAS: Convierte tablas complejas o párrafos densos en listas de puntos (bullet points).
+5. CLARIDAD: Si el texto es ambiguo, acláralo manteniendo la veracidad 100%. No inventes datos.
+6. FAQ: Si detectas puntos clave, añade una breve sección de "Preguntas Frecuentes" al final del texto.
+
+Documento original: ${documentName}`;
+
+  try {
+    const result = await generateResponse(
+      "Por favor, reestructura y optimiza el siguiente texto para que una IA pueda consultarlo con precisión máxima:",
+      [text],
+      systemPrompt
+    );
+    return result.answer;
+  } catch (error) {
+    console.error('Error optimizing content with IA:', error);
+    return text; // Fallback al original si falla la IA
+  }
+}
 
 /**
  * Parsea el contenido de un buffer (PDF, DOCX o TXT) a texto
@@ -89,7 +119,7 @@ export async function uploadDocumentFile(
 }
 
 /**
- * Crear documento en la base de datos y procesarlo
+ * Crear documento en la base de datos y procesarlo con optimización IA
  */
 export async function createDocument(
   name: string,
@@ -106,7 +136,11 @@ export async function createDocument(
   const documentId = `doc_${Date.now()}`;
 
   try {
-    // Crear registro de documento
+    // 1. Optimizar contenido con IA antes de guardar
+    console.log(`[AI-Optimization] Optimizing document: ${name}`);
+    const optimizedText = await optimizeContentWithIA(text, name);
+
+    // 2. Crear registro de documento con texto original y optimizado
     const { data: documentData, error: docError } = await supabaseAdmin
       .from('documents')
       .insert([
@@ -119,6 +153,8 @@ export async function createDocument(
           storage_path: `documents/${documentId}`,
           uploaded_by: uploadedBy,
           status: 'active',
+          content_optimized: optimizedText,
+          is_optimized: optimizedText !== text
         },
       ])
       .select()
@@ -128,8 +164,8 @@ export async function createDocument(
       throw new Error(`Failed to create document: ${docError.message}`);
     }
 
-    // Procesar chunks
-    await processDocumentChunks(documentId, text);
+    // 3. Procesar chunks SOLAMENTE sobre el texto optimizado
+    await processDocumentChunks(documentId, optimizedText);
 
     return documentData as Document;
   } catch (error) {
@@ -137,6 +173,29 @@ export async function createDocument(
     throw error;
   }
 }
+
+/**
+ * Eliminar documento y todos sus artefactos
+ */
+export async function deleteDocument(documentId: string): Promise<void> {
+  if (!supabaseAdmin) throw new Error('Admin client not configured');
+
+  try {
+    // La eliminación de document_chunks y document_parents ocurre por CASCADE en la DB
+    const { error } = await supabaseAdmin
+      .from('documents')
+      .delete()
+      .eq('id', documentId);
+
+    if (error) throw error;
+    
+    console.log(`✅ Document ${documentId} and all its artifacts deleted.`);
+  } catch (error) {
+    console.error('Error deleting document:', error);
+    throw error;
+  }
+}
+
 
 /**
  * Procesar chunks de un documento usando arquitectura Parent-Child
