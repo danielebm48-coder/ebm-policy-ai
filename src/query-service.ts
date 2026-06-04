@@ -172,12 +172,21 @@ export async function processUserQuery(
 }
 
 /** Funciones de Soporte */
-export async function rateQueryResponse(id: string, rating: number): Promise<void> {
-  if (supabaseAdmin) await supabaseAdmin.from('ai_queries').update({ helpful_rating: rating }).eq('id', id);
+export async function rateQueryResponse(id: string, rating: number, feedback?: string): Promise<void> {
+  if (supabaseAdmin) await supabaseAdmin.from('ai_queries').update({ 
+    helpful_rating: rating,
+    feedback,
+    updated_at: new Date().toISOString() 
+  }).eq('id', id);
 }
 
-export async function getUserQueryHistory(userId: string): Promise<AIQuery[]> {
-  const { data } = await (supabaseAdmin || supabaseClient).from('ai_queries').select('*').eq('user_id', userId).order('requested_at', { ascending: false }).limit(10);
+export async function getUserQueryHistory(userId: string, limit: number = 10): Promise<AIQuery[]> {
+  const { data } = await (supabaseAdmin || supabaseClient)
+    .from('ai_queries')
+    .select('*')
+    .eq('user_id', userId)
+    .order('requested_at', { ascending: false })
+    .limit(limit);
   return (data || []) as AIQuery[];
 }
 
@@ -195,11 +204,16 @@ export async function markQueryAsProcessed(id: string, userId: string): Promise<
   if (supabaseAdmin) await supabaseAdmin.from('ai_queries').update({ is_processed: true, processed_at: new Date().toISOString(), processed_by: userId }).eq('id', id);
 }
 
-export async function getQueryStatistics() {
+export async function getQueryStatistics(startDate?: string, endDate?: string) {
   const db = supabaseAdmin || supabaseClient;
   const { data: config } = await db.from('system_settings').select('value').eq('key', 'stats_config').single();
   const lastReset = config?.value?.last_reset_at || '2020-01-01';
-  const { data } = await db.from('ai_queries').select('*').gte('requested_at', lastReset);
+  
+  let query = db.from('ai_queries').select('*').gte('requested_at', lastReset);
+  if (startDate) query = query.gte('requested_at', startDate);
+  if (endDate) query = query.lte('requested_at', endDate);
+
+  const { data } = await query;
   const { data: mostConsulted } = await db.from('document_consultation_stats').select('*').order('consultation_count', { ascending: false }).limit(5);
 
   return {
