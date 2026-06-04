@@ -10,6 +10,7 @@ interface Message {
   sender: 'user' | 'ai';
   reference?: string;
   timestamp: Date;
+  rated?: boolean;
 }
 
 const RoleDashboard: React.FC = () => {
@@ -43,6 +44,26 @@ const RoleDashboard: React.FC = () => {
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleRate = async (queryId: string, rating: number) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/policies/ask/${queryId}/rate`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': currentProfile.userId,
+          'x-user-role': normalizedRole,
+          'x-user-email': currentProfile.email
+        },
+        body: JSON.stringify({ rating })
+      });
+      if (response.ok) {
+        setMessages(prev => prev.map(m => m.id === queryId ? { ...m, rated: true } : m));
+      }
+    } catch (e) {
+      console.error('Error rating:', e);
+    }
   };
 
   useEffect(() => {
@@ -179,6 +200,26 @@ const RoleDashboard: React.FC = () => {
                       borderRadius: '50%' 
                     }}></span>
                     {msg.reference}
+                  </div>
+                )}
+                {msg.sender === 'ai' && msg.id !== '1' && !msg.rated && (
+                  <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem' }}>
+                    <span style={{ fontSize: '0.65rem', color: '#64748b' }}>¿Fue útil?</span>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button 
+                        key={star} 
+                        onClick={() => handleRate(msg.id, star)}
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '0.8rem', padding: 0 }}
+                        title={`${star} estrellas`}
+                      >
+                        ⭐
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {msg.rated && (
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.65rem', color: 'var(--action-green)', fontStyle: 'italic' }}>
+                    ¡Gracias por tu calificación!
                   </div>
                 )}
               </div>

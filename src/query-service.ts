@@ -336,12 +336,61 @@ export async function getUserQueryHistory(
 }
 
 /**
- * Obtener estadísticas de consultas
+ * Reiniciar estadísticas (actualizando la fecha de corte)
+ */
+export async function resetSystemStats(type: 'all' | 'unanswered'): Promise<void> {
+  if (!supabaseAdmin) throw new Error('Admin client not configured');
+  
+  const { data: config } = await supabaseAdmin
+    .from('system_settings')
+    .select('value')
+    .eq('key', 'stats_config')
+    .single();
+  
+  const newValue = { ...(config?.value || {}) };
+  const now = new Date().toISOString();
+  
+  if (type === 'all') newValue.last_reset_at = now;
+  if (type === 'unanswered') newValue.unanswered_reset_at = now;
+  
+  await supabaseAdmin
+    .from('system_settings')
+    .upsert({ key: 'stats_config', value: newValue, updated_at: now });
+}
+
+/**
+ * Marcar una sugerencia/pregunta como procesada
+ */
+export async function markQueryAsProcessed(queryId: string, userId: string): Promise<void> {
+  if (!supabaseAdmin) throw new Error('Admin client not configured');
+  await supabaseAdmin
+    .from('ai_queries')
+    .update({ 
+      is_processed: true, 
+      processed_at: new Date().toISOString(),
+      processed_by: userId 
+    })
+    .eq('id', queryId);
+}
+
+/**
+ * Obtener estadísticas de consultas mejoradas
  */
 export async function getQueryStatistics(startDate?: string, endDate?: string) {
   try {
     const db = supabaseAdmin || supabaseClient;
-    let query = db.from('ai_queries').select('*');
+    
+    // Obtener configuración de reinicio
+    const { data: config } = await db
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'stats_config')
+      .single();
+    
+    const lastReset = config?.value?.last_reset_at || '2020-01-01T00:00:00Z';
+    const unansweredReset = config?.value?.unanswered_reset_at || '2020-01-01T00:00:00Z';
+
+    let query = db.from('ai_queries').select('*').gte('requested_at', lastReset);
 
     if (startDate) query = query.gte('requested_at', startDate);
     if (endDate) query = query.lte('requested_at', endDate);
@@ -349,12 +398,25 @@ export async function getQueryStatistics(startDate?: string, endDate?: string) {
     const { data, error } = await query;
     if (error) throw error;
 
+    // Calcular más consultados (desde la vista o logs)
+    const { data: mostConsulted } = await db
+      .from('document_consultation_stats')
+      .select('*')
+      .order('consultation_count', { ascending: false })
+      .limit(5);
+
     const stats = {
       total: data?.length || 0,
       errors: data?.filter((q: any) => q.status === 'error').length || 0,
       average_rating: data?.filter((q: any) => q.helpful_rating).reduce((acc: number, q: any) => acc + q.helpful_rating, 0) / (data?.filter((q: any) => q.helpful_rating).length || 1) || 0,
       by_role: {} as Record<string, number>,
-      unanswered: data?.filter((q: any) => q.error_message === 'NO_DOCUMENT_MATCH').length || 0
+      unanswered: data?.filter((q: any) => q.error_message === 'NO_DOCUMENT_MATCH' && q.requested_at >= unansweredReset && !q.is_processed).length || 0,
+      processed_count: data?.filter((q: any) => q.is_processed).length || 0,
+      most_consulted: (mostConsulted || []).map(d => ({
+        id: d.id,
+        name: d.name,
+        count: d.consultation_count
+      }))
     };
 
     data?.forEach((q: any) => {
@@ -367,6 +429,7 @@ export async function getQueryStatistics(startDate?: string, endDate?: string) {
     throw error;
   }
 }
+
 
 /**
  * Analizar interacciones para proporcionar insights

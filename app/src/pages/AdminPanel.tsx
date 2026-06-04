@@ -106,6 +106,7 @@ const AdminPanel: React.FC = () => {
   const [chatError, setChatError] = useState<string | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<'docs' | 'chat'>('docs');
+  const [suggestionsTab, setSuggestionsTab] = useState<'pending' | 'graph'>('pending');
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -260,6 +261,41 @@ const AdminPanel: React.FC = () => {
       console.error('Error loading insights:', error);
     } finally {
       setIsLoadingInsights(false);
+    }
+  };
+
+  const handleResetStats = async (type: 'all' | 'unanswered') => {
+    if (role !== 'directivo') return;
+    if (!window.confirm(`¿Estás seguro de reiniciar ${type === 'all' ? 'todas las estadísticas' : 'la lista de consultas sin respuesta'}?`)) return;
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/policies/admin/stats/reset`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type })
+      });
+      if (response.ok) {
+        await loadStatistics();
+        if (type === 'unanswered') await loadUnansweredQueries();
+        setNotice('Estadísticas reiniciadas correctamente.');
+      }
+    } catch (e) {
+      setError('Error al reiniciar estadísticas.');
+    }
+  };
+
+  const handleProcessQuery = async (queryId: string) => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/policies/admin/queries/${queryId}/process`, {
+        method: 'POST',
+        headers: authHeaders
+      });
+      if (response.ok) {
+        await loadUnansweredQueries();
+        await loadStatistics();
+      }
+    } catch (e) {
+      console.error('Error processing query:', e);
     }
   };
 
@@ -910,7 +946,23 @@ const AdminPanel: React.FC = () => {
           )}
 
           <section style={{ marginTop: '0.5rem' }}>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Sugerencias de la IA para Documentacion</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Sugerencias de la IA para Documentacion</h2>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button 
+                  onClick={() => setSuggestionsTab('pending')}
+                  style={{ backgroundColor: suggestionsTab === 'pending' ? 'var(--primary-blue)' : 'var(--white)', color: suggestionsTab === 'pending' ? 'white' : 'var(--primary-blue)', border: '1px solid var(--primary-blue)', padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-md)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Pendientes
+                </button>
+                <button 
+                  onClick={() => setSuggestionsTab('graph')}
+                  style={{ backgroundColor: suggestionsTab === 'graph' ? 'var(--primary-blue)' : 'var(--white)', color: suggestionsTab === 'graph' ? 'white' : 'var(--primary-blue)', border: '1px solid var(--primary-blue)', padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-md)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Gestión
+                </button>
+              </div>
+            </div>
             <div style={{ 
               padding: '1.25rem', 
               backgroundColor: '#f8fafc', 
@@ -920,14 +972,56 @@ const AdminPanel: React.FC = () => {
               lineHeight: 1.6,
               color: 'var(--text-dark)'
             }}>
-              {isLoadingRecs ? 'Analizando consultas sin respuesta...' : (
-                <div dangerouslySetInnerHTML={{ __html: (typeof recommendations === 'string' ? recommendations : 'No hay recomendaciones suficientes todavia.').replace(/\n/g, '<br/>') }} />
+              {suggestionsTab === 'pending' ? (
+                isLoadingRecs ? 'Analizando consultas sin respuesta...' : (
+                  <div dangerouslySetInnerHTML={{ __html: (typeof recommendations === 'string' ? recommendations : 'No hay recomendaciones suficientes todavia.').replace(/\n/g, '<br/>') }} />
+                )
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                        <span>Progreso de Documentación</span>
+                        <span style={{ fontWeight: 'bold' }}>{Math.round(((statistics as any)?.processed_count || 0) / Math.max(1, ((statistics as any)?.processed_count || 0) + unansweredQueries.length) * 100)}%</span>
+                      </div>
+                      <div style={{ width: '100%', height: '12px', backgroundColor: '#e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                        <div style={{ 
+                          width: `${((statistics as any)?.processed_count || 0) / Math.max(1, ((statistics as any)?.processed_count || 0) + unansweredQueries.length) * 100}%`, 
+                          height: '100%', 
+                          backgroundColor: 'var(--action-green)',
+                          transition: 'width 0.5s ease'
+                        }} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '1.5rem' }}>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--action-green)' }}>{(statistics as any)?.processed_count || 0}</div>
+                        <div style={{ fontSize: '0.65rem', color: '#64748b', textTransform: 'uppercase' }}>Procesadas</div>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--accent-gold)' }}>{unansweredQueries.length}</div>
+                        <div style={{ fontSize: '0.65rem', color: '#64748b', textTransform: 'uppercase' }}>Pendientes</div>
+                      </div>
+                    </div>
+                  </div>
+                  <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>
+                    Las sugerencias se basan en preguntas que la IA no pudo responder. Al documentar estos temas o marcar las consultas como "Gestionadas", aumentas la cobertura de conocimiento del sistema.
+                  </p>
+                </div>
               )}
             </div>
           </section>
 
           <section style={{ marginTop: '1.5rem' }}>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Analisis de Grupos de Interes (Direccion)</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Analisis de Grupos de Interes (Direccion)</h2>
+              <button 
+                onClick={loadInsights}
+                style={{ backgroundColor: 'var(--nickel-light)', border: 'none', padding: '0.4rem 0.8rem', borderRadius: 'var(--radius-md)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Actualizar
+              </button>
+            </div>
             <div style={{ 
               padding: '1.25rem', 
               backgroundColor: '#f1f5f9', 
@@ -935,7 +1029,8 @@ const AdminPanel: React.FC = () => {
               border: '1px solid #cbd5e1',
               fontSize: '0.925rem',
               lineHeight: 1.6,
-              color: 'var(--text-dark)'
+              color: 'var(--text-dark)',
+              whiteSpace: 'pre-wrap'
             }}>
               {isLoadingInsights ? 'Generando analisis estrategico...' : (
                 <>
@@ -959,6 +1054,14 @@ const AdminPanel: React.FC = () => {
           <section>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
               <h2 style={{ fontSize: '1.1rem', margin: 0 }}>Mas consultados</h2>
+              {role === 'directivo' && (
+                <button 
+                  onClick={() => handleResetStats('all')}
+                  style={{ backgroundColor: 'transparent', color: '#64748b', border: '1px solid #e2e8f0', padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-md)', fontSize: '0.65rem', cursor: 'pointer' }}
+                >
+                  Reiniciar
+                </button>
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {(statistics?.most_consulted || []).length === 0 && (
@@ -978,12 +1081,22 @@ const AdminPanel: React.FC = () => {
           <section>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
               <h2 style={{ fontSize: '1.1rem', margin: 0 }}>Sin respuesta IA</h2>
-              <button
-                onClick={loadUnansweredQueries}
-                style={{ backgroundColor: 'var(--white)', color: 'var(--primary-blue)', border: '1px solid var(--primary-blue)', padding: '0.4rem 0.65rem', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.75rem' }}
-              >
-                Refrescar
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  onClick={loadUnansweredQueries}
+                  style={{ backgroundColor: 'var(--white)', color: 'var(--primary-blue)', border: '1px solid var(--primary-blue)', padding: '0.4rem 0.65rem', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer' }}
+                >
+                  Refrescar
+                </button>
+                {role === 'directivo' && (
+                  <button 
+                    onClick={() => handleResetStats('unanswered')}
+                    style={{ backgroundColor: 'var(--white)', color: 'var(--accent-gold)', border: '1px solid var(--accent-gold)', padding: '0.4rem 0.65rem', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer' }}
+                  >
+                    Reiniciar
+                  </button>
+                )}
+              </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {unansweredQueries.length === 0 && (
@@ -993,7 +1106,15 @@ const AdminPanel: React.FC = () => {
               )}
               {unansweredQueries.map((query) => (
                 <div key={query.id} style={{ padding: '0.9rem', backgroundColor: 'var(--white)', borderRadius: 'var(--radius-md)', border: '1px solid var(--nickel-medium)', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>{query.question}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>{query.question}</span>
+                    <button 
+                      onClick={() => handleProcessQuery(query.id)}
+                      style={{ backgroundColor: 'var(--nickel-light)', border: 'none', padding: '0.2rem 0.5rem', borderRadius: 'var(--radius-sm)', fontSize: '0.65rem', color: 'var(--text-dark)', cursor: 'pointer' }}
+                    >
+                      Gestionar
+                    </button>
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '0.7rem' }}>
                     <span>{query.user_role}</span>
                     <span>{new Date(query.requested_at).toLocaleDateString()}</span>

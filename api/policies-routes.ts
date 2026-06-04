@@ -541,19 +541,52 @@ router.get('/admin/recommendations', requireAuth, async (req: AuthRequest, res: 
   }
 });
 
-router.get('/admin/insights', requireAuth, async (req: AuthRequest, res: Response) => {
+router.post('/admin/stats/reset', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (user.role !== 'admin' && user.role !== 'directivo') {
-      return res.status(403).json({ error: 'Admin access required' });
+    if (user.role !== 'directivo') {
+      return res.status(403).json({ error: 'Solo los directores pueden reiniciar estadísticas globales' });
     }
 
-    const insights = await getStakeholderInsights();
-    res.json({ success: true, data: insights });
+    const { type } = req.body;
+    await resetSystemStats(type || 'all');
+
+    res.json({ success: true, message: `Estadísticas de tipo ${type || 'all'} reiniciadas` });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch insights', details: error instanceof Error ? error.message : 'Unknown error' });
+    res.status(500).json({ error: 'Failed to reset stats', details: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
+
+router.post('/admin/queries/:queryId/process', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    const { queryId } = req.params;
+
+    await markQueryAsProcessed(queryId, user.id);
+
+    res.json({ success: true, message: 'Consulta marcada como procesada' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to process query', details: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+router.get('/admin/processed-suggestions', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const db = supabaseAdmin || supabaseClient;
+    const { data, error } = await db
+      .from('ai_queries')
+      .select('id, question, processed_at, processed_by')
+      .eq('is_processed', true)
+      .order('processed_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({ success: true, data: data || [] });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch processed suggestions', details: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
 
 router.delete('/documents/:documentId', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
