@@ -171,6 +171,34 @@ export async function processUserQuery(
   }
 }
 
+/**
+ * REINICIO TOTAL: Borra todas las consultas y logs de auditoría
+ * Solo para ser usado por directores antes de una nueva etapa.
+ */
+export async function clearAllSystemData(): Promise<void> {
+  if (!supabaseAdmin) throw new Error('Admin client not configured');
+  
+  // 1. Borrar historial de consultas IA
+  const { error: queryError } = await supabaseAdmin
+    .from('ai_queries')
+    .delete()
+    .neq('id', 'placeholder'); // Truco para borrar todo sin WHERE id IS NOT NULL
+  
+  if (queryError) throw queryError;
+
+  // 2. Borrar logs de auditoría de documentos
+  const { error: auditError } = await supabaseAdmin
+    .from('document_audit_logs')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000');
+  
+  if (auditError) throw auditError;
+
+  // 3. Reiniciar fechas de corte de estadísticas
+  await resetSystemStats('all');
+  await resetSystemStats('unanswered');
+}
+
 /** Funciones de Soporte */
 export async function rateQueryResponse(id: string, rating: number, feedback?: string): Promise<void> {
   if (supabaseAdmin) await supabaseAdmin.from('ai_queries').update({ 

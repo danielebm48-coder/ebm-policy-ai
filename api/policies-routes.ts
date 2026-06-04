@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { supabaseClient, supabaseAdmin } from '../src/supabase';
 import { createDocument, getDocumentText, logDocumentAccess, getDocumentsByRolePermission, updateDocument, parseDocumentContent } from '../src/document-service';
-import { processUserQuery, rateQueryResponse, getUserQueryHistory, getQueryStatistics, getIARecommendations, getStakeholderInsights, resetSystemStats, markQueryAsProcessed } from '../src/query-service';
+import { processUserQuery, rateQueryResponse, getUserQueryHistory, getQueryStatistics, getIARecommendations, getStakeholderInsights, resetSystemStats, markQueryAsProcessed, clearAllSystemData } from '../src/query-service';
 import { Document, AIQuery } from '../src/supabase-types';
 
 const router = express.Router();
@@ -757,6 +757,21 @@ router.get('/debug/documents-detailed', requireAuth, async (_req: AuthRequest, r
       error: 'Failed to fetch detailed document info',
       details: error instanceof Error ? error.message : 'Unknown error',
     });
+  }
+});
+
+router.post('/admin/system/reset-all', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user!;
+    if (user.role !== 'directivo') {
+      return res.status(403).json({ error: 'Accion restringida a Directores' });
+    }
+
+    await clearAllSystemData();
+    res.json({ success: true, message: 'Sistema reiniciado: historial de consultas y auditoria eliminados.' });
+  } catch (error) {
+    console.error('Error resetting system data:', error);
+    res.status(500).json({ error: 'Failed to reset system data', details: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 

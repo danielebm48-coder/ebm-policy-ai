@@ -700,23 +700,46 @@ const AdminPanel: React.FC = () => {
 
   return (
     <Layout role={role || 'directivo'} title="Portal de Gobernanza y Decisiones">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-        {stats.map((stat, i) => (
-          <div key={i} style={{
-            padding: '1.25rem',
-            backgroundColor: 'var(--white)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-sm)',
-            border: '1px solid var(--nickel-medium)',
-            borderTop: `4px solid ${stat.color}`,
-          }}>
-            <div style={{ fontSize: '0.8125rem', color: '#64748b', marginBottom: '0.5rem', fontWeight: 600 }}>{stat.label}</div>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem' }}>
-              <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: 'var(--text-dark)' }}>{stat.value}</div>
-              <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.35rem' }}>{stat.trend}</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem', flex: 1 }}>
+          {stats.map((stat, i) => (
+            <div key={i} style={{
+              padding: '1.25rem',
+              backgroundColor: 'var(--white)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: 'var(--shadow-sm)',
+              border: '1px solid var(--nickel-medium)',
+              borderTop: `4px solid ${stat.color}`,
+            }}>
+              <div style={{ fontSize: '0.8125rem', color: '#64748b', marginBottom: '0.5rem', fontWeight: 600 }}>{stat.label}</div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem' }}>
+                <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: 'var(--text-dark)' }}>{stat.value}</div>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.35rem' }}>{stat.trend}</div>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+        {role === 'directivo' && (
+          <button 
+            onClick={async () => {
+              if (window.confirm('🚨 ¡ALERTA! Esto eliminará TODO el historial de preguntas, calificaciones y logs de auditoría permanentemente. ¿Deseas reiniciar el sistema de datos?')) {
+                try {
+                  const resp = await fetch(`${apiBaseUrl}/api/policies/admin/system/reset-all`, {
+                    method: 'POST',
+                    headers: { 'x-user-id': auth.user.id, 'x-user-role': role }
+                  });
+                  if (resp.ok) {
+                    alert('Sistema de datos reiniciado completamente.');
+                    window.location.reload();
+                  }
+                } catch (e) { console.error(e); }
+              }
+            }}
+            style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '0.65rem 1rem', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer', marginLeft: '1rem', height: 'fit-content', whiteSpace: 'nowrap' }}
+          >
+            BORRADO TOTAL DE PREGUNTAS
+          </button>
+        )}
       </div>
 
       {notice && <div style={{ marginBottom: '1rem', padding: '0.85rem 1rem', border: '1px solid #bbf7d0', backgroundColor: '#f0fdf4', color: '#166534', borderRadius: 'var(--radius-md)' }}>{notice}</div>}
