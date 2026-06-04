@@ -121,27 +121,29 @@ Pregunta: "${question}"`;
 /**
  * CAPA 2: Búsqueda Híbrida (Vectorial + Full-Text Search)
  */
-async function hybridSearch(question: string, limit: number = 20): Promise<ChunkWithSimilarity[]> {
+async function hybridSearch(question: string, limit: number = 40): Promise<ChunkWithSimilarity[]> {
   try {
     const questionEmbedding = await generateEmbedding(question);
     const db = supabaseAdmin || supabaseClient;
+    
+    console.log(`[Advanced RAG] Fetching up to ${limit} candidates for: "${question}"`);
     
     // Llamada a la nueva función RPC de búsqueda híbrida
     const { data, error } = await db.rpc('match_documents_hybrid', {
       query_embedding: questionEmbedding,
       query_text: question,
       match_count: limit,
-      match_threshold: 0.2,
-      full_text_weight: 0.4,
-      vector_weight: 0.6
+      match_threshold: 0.05, // Umbral mucho más bajo para no perder nada
+      full_text_weight: 0.5,
+      vector_weight: 0.5
     });
 
     if (error) {
-      console.warn('[Hybrid Search RPC Error]:', error.message);
-      // Fallback a búsqueda vectorial simple si la RPC no existe
+      console.warn('[Hybrid Search RPC Error - Falling back to Vector]:', error.message);
       return await findSimilarChunks(question, limit);
     }
 
+    console.log(`[Advanced RAG] Found ${data?.length || 0} hybrid candidates.`);
     return (data || []).map((c: any) => ({
       id: c.id,
       document_id: c.document_id,
@@ -159,30 +161,43 @@ async function hybridSearch(question: string, limit: number = 20): Promise<Chunk
  * CAPA 4: Re-ranking (Filtro de Relevancia Semántica)
  */
 async function rerankChunks(question: string, chunks: any[]): Promise<any[]> {
-  if (chunks.length <= 5) return chunks;
+  if (chunks.length <= 6) return chunks;
 
-  const contextForRerank = chunks.map((c, i) => `[ID:${i}] ${c.text.substring(0, 300)}...`).join('\n\n');
-  const systemPrompt = `Eres un experto en recuperación de información. Tu tarea es identificar los fragmentos más relevantes para responder a la pregunta del usuario.
+  // Tomar solo los primeros 25 para no saturar al re-ranker
+  const candidates = chunks.slice(0, 25);
+  const contextForRerank = candidates.map((c, i) => `[ID:${i}] ${c.text.substring(0, 400)}`).join('\n\n');
+  
+  const systemPrompt = `Eres un experto en recuperación de información para la Escuela Maquilishuat. 
+Tu tarea es identificar los fragmentos de texto que REALMENTE responden a la pregunta.
+
 Pregunta: "${question}"
 
 Fragmentos candidatos:
 ${contextForRerank}
 
-Responde ÚNICAMENTE con los IDs de los 5 fragmentos más útiles, separados por comas, en orden de relevancia (ej: 4,12,2,0,8). No expliques nada.`;
+Responde ÚNICAMENTE con los números de ID (0, 1, 2...) de los fragmentos que contienen la respuesta o contexto útil, separados por comas. 
+Si ninguno sirve, responde "NONE". Máximo 6 IDs.`;
 
   try {
     const result = await generateResponse(question, [], systemPrompt);
-    const ids = result.answer.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+    const answer = result.answer.toUpperCase();
     
-    const topChunks = ids
-      .map(id => chunks[id])
-      .filter(c => !!c)
-      .slice(0, 5);
+    if (answer.includes('NONE')) {
+      console.log('[Re-ranking] No relevant chunks found by AI, using top 3 as fallback.');
+      return candidates.slice(0, 3);
+    }
 
-    return topChunks.length > 0 ? topChunks : chunks.slice(0, 5);
+    const ids = answer.match(/\d+/g)?.map(id => parseInt(id)) || [];
+    const topChunks = ids
+      .map(id => candidates[id])
+      .filter(c => !!c)
+      .slice(0, 6);
+
+    console.log(`[Re-ranking] Selected ${topChunks.length} chunks out of ${candidates.length} candidates.`);
+    return topChunks.length > 0 ? topChunks : candidates.slice(0, 4);
   } catch (error) {
     console.error('[Re-ranking Error]:', error);
-    return chunks.slice(0, 5); // Fallback
+    return chunks.slice(0, 4); // Fallback
   }
 }
 
