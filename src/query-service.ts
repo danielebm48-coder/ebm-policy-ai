@@ -154,18 +154,14 @@ async function hybridSearch(question: string, limit: number = 30): Promise<Chunk
   const targetDocIds = await identifyTargetDocuments(question);
   console.log(`[Retrieval] Target documents identified: ${targetDocIds.length}`);
 
-  // B. Búsqueda por Texto Completo (BM25-ish Ranking)
-  // Esta es la capa "local" que no gasta tokens de Google
+  // B. Búsqueda por Texto Completo (Capa Local Resiliente)
+  // Nota: Usamos una búsqueda de texto simple vía Supabase para evitar errores de parseo complejos
   let ftsQuery = db.from('document_chunks')
-    .select(`
-      id, 
-      document_id, 
-      parent_id, 
-      text, 
-      ts_rank_cd(fts_vector, plainto_tsquery('spanish', '${question.replace(/'/g, "''")}')) as rank
-    `)
-    .filter('fts_vector', '@@', `plainto_tsquery('spanish', '${question.replace(/'/g, "''")}')`)
-    .order('rank', { ascending: false })
+    .select('id, document_id, parent_id, text')
+    .textSearch('text', question, { 
+      config: 'spanish',
+      type: 'plain' 
+    })
     .limit(limit);
 
   if (targetDocIds.length > 0) {
@@ -173,6 +169,7 @@ async function hybridSearch(question: string, limit: number = 30): Promise<Chunk
   }
 
   const { data: ftsResults, error: ftsError } = await ftsQuery;
+  if (ftsError) console.warn('[Retrieval] FTS Query Error:', ftsError.message);
 
   // C. Búsqueda Vectorial (Similitud Semántica) - Solo si tenemos cuota
   let vectorResults: any[] = [];
@@ -183,7 +180,7 @@ async function hybridSearch(question: string, limit: number = 30): Promise<Chunk
       query_text: question,
       match_count: limit,
       match_threshold: 0.1,
-      full_text_weight: 0.3, // Menos peso al texto aquí porque ya hicimos FTS puro
+      full_text_weight: 0.3,
       vector_weight: 0.7
     });
     if (!vError && vData) vectorResults = vData;
@@ -191,16 +188,16 @@ async function hybridSearch(question: string, limit: number = 30): Promise<Chunk
     console.warn('[Retrieval] Vector search skipped (quota/API error)');
   }
 
-  // D. Fusión de Resultados (RRF - Reciprocal Rank Fusion simplificado)
+  // D. Fusión de Resultados
   const allCandidates = new Map<string, any>();
 
-  // Procesar FTS (Prioridad a la palabra exacta)
-  (ftsResults || []).forEach((c, i) => {
-    allCandidates.set(c.id, { ...c, score: (1.0 / (i + 1)) * 1.5 }); // Bonus por coincidencia exacta
+  // Procesar FTS
+  (ftsResults || []).forEach((c: any, i: number) => {
+    allCandidates.set(c.id, { ...c, score: (1.0 / (i + 1)) * 1.5 });
   });
 
   // Procesar Vectoriales
-  vectorResults.forEach((c, i) => {
+  (vectorResults || []).forEach((c: any, i: number) => {
     const existing = allCandidates.get(c.id);
     const vectorScore = 1.0 / (i + 1);
     if (existing) {
