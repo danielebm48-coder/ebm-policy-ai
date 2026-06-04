@@ -119,71 +119,107 @@ Pregunta: "${question}"`;
 }
 
 /**
- * CAPA 2: Búsqueda Híbrida (Vectorial + Full-Text Search)
- * Optimizada para ser resiliente a fallos de cuota de embeddings.
+ * CAPA DE EXTRACCIÓN DE ENTIDADES (Estilo PDFgear)
+ * Identifica si la pregunta se refiere a un documento o tema específico
+ * para "bloquear" la búsqueda y reducir ruido.
  */
-async function hybridSearch(question: string, limit: number = 40): Promise<ChunkWithSimilarity[]> {
+async function identifyTargetDocuments(question: string): Promise<string[]> {
   const db = supabaseAdmin || supabaseClient;
-  let questionEmbedding: number[] | null = null;
+  const tokens = question.toLowerCase().split(/\s+/).filter(t => t.length > 3);
+  
+  if (tokens.length === 0) return [];
 
-  try {
-    // Intentar generar embedding
-    questionEmbedding = await generateEmbedding(question);
-  } catch (error) {
-    console.warn('[Hybrid Search] Embedding API failed or quota exceeded. Falling back to Full-Text Search only.');
+  const { data: docs } = await db.from('documents').select('id, name').eq('status', 'active');
+  if (!docs) return [];
+
+  // Buscar coincidencia entre palabras de la pregunta y nombres de documentos
+  return docs
+    .filter(doc => {
+      const docName = doc.name.toLowerCase();
+      return tokens.some(t => docName.includes(t));
+    })
+    .map(doc => doc.id);
+}
+
+/**
+ * MOTOR DE BÚSQUEDA HÍBRIDO (PDFgear Style)
+ * 1. Intenta Búsqueda por Palabras Clave Exactas (FTS) - Prioridad Alta
+ * 2. Usa Vectores solo como refinamiento o si el FTS falla
+ * 3. Bloquea la búsqueda a documentos específicos si se detectan en la pregunta
+ */
+async function hybridSearch(question: string, limit: number = 30): Promise<ChunkWithSimilarity[]> {
+  const db = supabaseAdmin || supabaseClient;
+  
+  // A. Identificar si hay documentos específicos mencionados (Locking)
+  const targetDocIds = await identifyTargetDocuments(question);
+  console.log(`[Retrieval] Target documents identified: ${targetDocIds.length}`);
+
+  // B. Búsqueda por Texto Completo (BM25-ish Ranking)
+  // Esta es la capa "local" que no gasta tokens de Google
+  let ftsQuery = db.from('document_chunks')
+    .select(`
+      id, 
+      document_id, 
+      parent_id, 
+      text, 
+      ts_rank_cd(fts_vector, plainto_tsquery('spanish', '${question.replace(/'/g, "''")}')) as rank
+    `)
+    .filter('fts_vector', '@@', `plainto_tsquery('spanish', '${question.replace(/'/g, "''")}')`)
+    .order('rank', { ascending: false })
+    .limit(limit);
+
+  if (targetDocIds.length > 0) {
+    ftsQuery = ftsQuery.in('document_id', targetDocIds);
   }
 
+  const { data: ftsResults, error: ftsError } = await ftsQuery;
+
+  // C. Búsqueda Vectorial (Similitud Semántica) - Solo si tenemos cuota
+  let vectorResults: any[] = [];
   try {
-    if (questionEmbedding) {
-      // BÚSQUEDA HÍBRIDA (Vector + FTS)
-      const { data, error } = await db.rpc('match_documents_hybrid', {
-        query_embedding: questionEmbedding,
-        query_text: question,
-        match_count: limit,
-        match_threshold: 0.05,
-        full_text_weight: 0.5,
-        vector_weight: 0.5
-      });
+    const embedding = await generateEmbedding(question);
+    const { data: vData, error: vError } = await db.rpc('match_documents_hybrid', {
+      query_embedding: embedding,
+      query_text: question,
+      match_count: limit,
+      match_threshold: 0.1,
+      full_text_weight: 0.3, // Menos peso al texto aquí porque ya hicimos FTS puro
+      vector_weight: 0.7
+    });
+    if (!vError && vData) vectorResults = vData;
+  } catch (e) {
+    console.warn('[Retrieval] Vector search skipped (quota/API error)');
+  }
 
-      if (!error && data) {
-        return data.map((c: any) => ({
-          id: c.id,
-          document_id: c.document_id,
-          parent_id: c.parent_id,
-          text: c.text,
-          similarity: c.combined_score || 0
-        }));
-      }
-      console.warn('[Hybrid Search RPC Error]:', error?.message);
+  // D. Fusión de Resultados (RRF - Reciprocal Rank Fusion simplificado)
+  const allCandidates = new Map<string, any>();
+
+  // Procesar FTS (Prioridad a la palabra exacta)
+  (ftsResults || []).forEach((c, i) => {
+    allCandidates.set(c.id, { ...c, score: (1.0 / (i + 1)) * 1.5 }); // Bonus por coincidencia exacta
+  });
+
+  // Procesar Vectoriales
+  vectorResults.forEach((c, i) => {
+    const existing = allCandidates.get(c.id);
+    const vectorScore = 1.0 / (i + 1);
+    if (existing) {
+      existing.score += vectorScore;
+    } else {
+      allCandidates.set(c.id, { ...c, score: vectorScore });
     }
+  });
 
-    // FALLBACK: Búsqueda de Texto Completo Pura (FTS) si falla el vector o el RPC
-    console.log('[Hybrid Search] Performing pure Full-Text Search fallback.');
-    const { data: ftsData, error: ftsError } = await db
-      .from('document_chunks')
-      .select('id, document_id, parent_id, text, ts_rank_cd(fts_vector, plainto_tsquery(\'spanish\', $1)) as rank')
-      .filter('fts_vector', '@@', `plainto_tsquery('spanish', '${question.replace(/'/g, "''")}')`)
-      .order('rank', { ascending: false })
-      .limit(limit);
-
-    if (ftsError) {
-      // Segundo Fallback: Búsqueda por palabras clave manual (JS)
-      console.warn('[Hybrid Search] FTS Fallback failed:', ftsError.message);
-      return await findKeywordChunks(question, 'any', 10);
-    }
-
-    return (ftsData || []).map((c: any) => ({
+  return Array.from(allCandidates.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(c => ({
       id: c.id,
       document_id: c.document_id,
       parent_id: c.parent_id,
       text: c.text,
-      similarity: c.rank || 0
+      similarity: c.score
     }));
-
-  } catch (error) {
-    console.error('[Hybrid Search Error]:', error);
-    return [];
-  }
 }
 
 /**
