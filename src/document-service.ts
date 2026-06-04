@@ -31,21 +31,38 @@ export async function parseDocumentContent(
 }
 
 /**
- * Dividir un texto en chunks
+ * Dividir un texto en chunks con soporte para jerarquía Parent-Child
+ * Intenta no romper palabras o líneas si es posible.
  */
-export function splitTextIntoChunks(text: string, chunkSize: number = 500, overlap: number = 100): string[] {
+export function splitTextIntoChunks(text: string, chunkSize: number = 600, overlap: number = 100): string[] {
   const chunks: string[] = [];
   let start = 0;
 
   while (start < text.length) {
-    const end = Math.min(start + chunkSize, text.length);
-    chunks.push(text.substring(start, end));
-    if (end === text.length) break;
+    let end = Math.min(start + chunkSize, text.length);
+
+    // Intentar retroceder hasta el último espacio o salto de línea para no cortar palabras
+    if (end < text.length) {
+      const lastSpace = text.lastIndexOf(' ', end);
+      const lastNewline = text.lastIndexOf('\n', end);
+      const breakPoint = Math.max(lastSpace, lastNewline);
+
+      if (breakPoint > start + (chunkSize * 0.7)) {
+        end = breakPoint;
+      }
+    }
+
+    chunks.push(text.substring(start, end).trim());
+    if (end >= text.length) break;
     start = end - overlap;
+
+    // Asegurarse de no entrar en un bucle infinito
+    if (start >= end) start = end - 1;
   }
 
   return chunks;
 }
+
 
 /**
  * Guardar un documento en Supabase Storage
@@ -122,7 +139,7 @@ export async function createDocument(
 }
 
 /**
- * Procesar chunks de un documento y generar embeddings
+ * Procesar chunks de un documento usando arquitectura Parent-Child
  */
 export async function processDocumentChunks(documentId: string, text: string): Promise<void> {
   if (!supabaseAdmin) {
@@ -130,52 +147,100 @@ export async function processDocumentChunks(documentId: string, text: string): P
   }
 
   try {
-    const chunks = splitTextIntoChunks(text);
-    const chunkInserts = [];
+    // 1. Crear Chunks PADRE (Contexto: ~3500 chars / ~1000 tokens)
+    const parentChunks = splitTextIntoChunks(text, 3500, 500);
+    const parentInserts = parentChunks.map((t, i) => ({
+      document_id: documentId,
+      chunk_number: i,
+      text: t
+    }));
 
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkText = chunks[i];
+    const { data: savedParents, error: parentError } = await supabaseAdmin
+      .from('document_parents')
+      .insert(parentInserts)
+      .select('id, chunk_number');
 
-      // Generar embedding
-      let embedding: number[] | null = null;
-      try {
-        embedding = await generateEmbedding(chunkText);
-      } catch (error) {
-        console.warn(`Warning: Could not generate embedding for chunk ${i}:`, error);
-      }
-
-      chunkInserts.push({
-        document_id: documentId,
-        chunk_number: i,
-        text: chunkText,
-        embedding: embedding,
-        position_in_doc: {
-          chunk: i,
-          total_chunks: chunks.length,
-        },
-      });
+    if (parentError) {
+      // Fallback: Si la tabla document_parents no existe aún, usar el método antiguo
+      console.warn('document_parents table might not exist, falling back to simple chunking');
+      return await processDocumentChunksLegacy(documentId, text);
     }
 
-    // Insertar chunks en lotes
+    const parentMap = new Map(savedParents.map(p => [p.chunk_number, p.id]));
+
+    // 2. Crear Chunks HIJO (Vectores: ~800 chars / ~250 tokens)
+    const childInserts = [];
+    let overallChildIndex = 0;
+
+    for (let i = 0; i < parentChunks.length; i++) {
+      const parentText = parentChunks[i];
+      const parentId = parentMap.get(i);
+      
+      const children = splitTextIntoChunks(parentText, 800, 150);
+      
+      for (const childText of children) {
+        // Generar embedding para el HIJO
+        let embedding: number[] | null = null;
+        try {
+          embedding = await generateEmbedding(childText);
+        } catch (error) {
+          console.warn(`Warning: Could not generate embedding for child chunk ${overallChildIndex}:`, error);
+        }
+
+        childInserts.push({
+          document_id: documentId,
+          parent_id: parentId,
+          chunk_number: overallChildIndex++,
+          text: childText,
+          embedding: embedding,
+          position_in_doc: {
+            parent_chunk: i,
+            child_in_parent: children.indexOf(childText)
+          }
+        });
+      }
+    }
+
+    // Insertar hijos en lotes
     const batchSize = 10;
-    for (let i = 0; i < chunkInserts.length; i += batchSize) {
-      const batch = chunkInserts.slice(i, i + batchSize);
-
-      const { error } = await supabaseAdmin
-        .from('document_chunks')
-        .insert(batch);
-
-      if (error) {
-        throw new Error(`Failed to insert chunks: ${error.message}`);
-      }
+    for (let i = 0; i < childInserts.length; i += batchSize) {
+      await supabaseAdmin.from('document_chunks').insert(childInserts.slice(i, i + batchSize));
     }
 
-    console.log(`✅ Processed ${chunks.length} chunks for document ${documentId}`);
+    console.log(`✅ Processed ${parentChunks.length} parents and ${childInserts.length} children for ${documentId}`);
   } catch (error) {
-    console.error('Error processing document chunks:', error);
+    console.error('Error in processDocumentChunks:', error);
     throw error;
   }
 }
+
+/**
+ * Método legacy para compatibilidad si no se ha aplicado el SQL
+ */
+async function processDocumentChunksLegacy(documentId: string, text: string): Promise<void> {
+  if (!supabaseAdmin) return;
+  const chunks = splitTextIntoChunks(text, 1000, 200);
+  const chunkInserts = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunkText = chunks[i];
+    let embedding = null;
+    try { embedding = await generateEmbedding(chunkText); } catch (e) {}
+    
+    chunkInserts.push({
+      document_id: documentId,
+      chunk_number: i,
+      text: chunkText,
+      embedding: embedding
+    });
+  }
+
+  const batchSize = 10;
+  for (let i = 0; i < chunkInserts.length; i += batchSize) {
+    await supabaseAdmin.from('document_chunks').insert(chunkInserts.slice(i, i + batchSize));
+  }
+}
+
 
 export async function getDocumentText(documentId: string): Promise<string> {
   const chunks = await getDocumentChunks(documentId);

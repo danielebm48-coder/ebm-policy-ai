@@ -97,7 +97,97 @@ async function findKeywordChunks(question: string, roleId: string, limit: number
 }
 
 /**
- * PROCESAMIENTO DE CONSULTA (Smart RAG)
+ * CAPA 1: Enrutamiento de Intenciones (Intent Routing)
+ */
+async function routeIntent(question: string): Promise<'CONVERSATIONAL' | 'KNOWLEDGE_QUERY'> {
+  const systemPrompt = `Clasifica la intención de la siguiente pregunta de un usuario de una escuela. 
+Responde ÚNICAMENTE con una de estas dos palabras:
+- CONVERSATIONAL: Si es un saludo, despedida, agradecimiento o charla trivial.
+- KNOWLEDGE_QUERY: Si es una pregunta sobre reglamentos, políticas, fechas, calendarios o procedimientos de la escuela.
+
+Pregunta: "${question}"`;
+
+  try {
+    const result = await generateResponse(question, [], systemPrompt);
+    const answer = result.answer.toUpperCase();
+    if (answer.includes('KNOWLEDGE_QUERY')) return 'KNOWLEDGE_QUERY';
+    return 'CONVERSATIONAL';
+  } catch (error) {
+    console.error('[Intent Routing Error]:', error);
+    return 'KNOWLEDGE_QUERY'; // Fallback seguro
+  }
+}
+
+/**
+ * CAPA 2: Búsqueda Híbrida (Vectorial + Full-Text Search)
+ */
+async function hybridSearch(question: string, limit: number = 20): Promise<ChunkWithSimilarity[]> {
+  try {
+    const questionEmbedding = await generateEmbedding(question);
+    const db = supabaseAdmin || supabaseClient;
+    
+    // Llamada a la nueva función RPC de búsqueda híbrida
+    const { data, error } = await db.rpc('match_documents_hybrid', {
+      query_embedding: questionEmbedding,
+      query_text: question,
+      match_count: limit,
+      match_threshold: 0.2,
+      full_text_weight: 0.4,
+      vector_weight: 0.6
+    });
+
+    if (error) {
+      console.warn('[Hybrid Search RPC Error]:', error.message);
+      // Fallback a búsqueda vectorial simple si la RPC no existe
+      return await findSimilarChunks(question, limit);
+    }
+
+    return (data || []).map((c: any) => ({
+      id: c.id,
+      document_id: c.document_id,
+      parent_id: c.parent_id,
+      text: c.text,
+      similarity: c.combined_score || 0
+    }));
+  } catch (error) {
+    console.error('[Hybrid Search Error]:', error);
+    return [];
+  }
+}
+
+/**
+ * CAPA 4: Re-ranking (Filtro de Relevancia Semántica)
+ */
+async function rerankChunks(question: string, chunks: any[]): Promise<any[]> {
+  if (chunks.length <= 5) return chunks;
+
+  const contextForRerank = chunks.map((c, i) => `[ID:${i}] ${c.text.substring(0, 300)}...`).join('\n\n');
+  const systemPrompt = `Eres un experto en recuperación de información. Tu tarea es identificar los fragmentos más relevantes para responder a la pregunta del usuario.
+Pregunta: "${question}"
+
+Fragmentos candidatos:
+${contextForRerank}
+
+Responde ÚNICAMENTE con los IDs de los 5 fragmentos más útiles, separados por comas, en orden de relevancia (ej: 4,12,2,0,8). No expliques nada.`;
+
+  try {
+    const result = await generateResponse(question, [], systemPrompt);
+    const ids = result.answer.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+    
+    const topChunks = ids
+      .map(id => chunks[id])
+      .filter(c => !!c)
+      .slice(0, 5);
+
+    return topChunks.length > 0 ? topChunks : chunks.slice(0, 5);
+  } catch (error) {
+    console.error('[Re-ranking Error]:', error);
+    return chunks.slice(0, 5); // Fallback
+  }
+}
+
+/**
+ * PROCESAMIENTO DE CONSULTA (Advanced RAG Pipeline)
  */
 export async function processUserQuery(
   userId: string,
@@ -111,59 +201,85 @@ export async function processUserQuery(
   try {
     await supabaseAdmin.from('ai_queries').insert([{ id: queryId, user_id: userId, user_role: userRole, question, status: 'processing' }]);
 
-    console.log(`[Smart RAG] Processing query: "${question}" for role: ${userRole}`);
+    // 1. CAPA 1: INTENT ROUTING
+    const intent = await routeIntent(question);
+    if (intent === 'CONVERSATIONAL') {
+      const result = await generateResponse(question, [], "Eres el Asistente de EBM. Responde amablemente a este saludo o charla trivial.");
+      await supabaseAdmin.from('ai_queries').update({
+        answer: result.answer,
+        status: 'completed',
+        completed_at: new Date().toISOString()
+      }).eq('id', queryId);
+      return { queryId, question, answer: result.answer, sourceDocuments: [], tokensUsed: result.tokensUsed };
+    }
 
-    // 1. BÚSQUEDA HÍBRIDA (Vectorial + Keywords)
-    const [vectorChunks, keywordChunks] = await Promise.all([
-      findSimilarChunks(question, 8), // Reducido de 12 a 8
-      findKeywordChunks(question, userRole, 3) // Reducido de 5 a 3
-    ]);
+    // 2. CAPA 2: HYBRID SEARCH
+    console.log(`[Advanced RAG] Searching knowledge base for: "${question}"`);
+    const candidates = await hybridSearch(question, 20);
 
-    // 2. COMBINAR Y FILTRAR
-    const allChunks = [...vectorChunks, ...keywordChunks];
-    const uniqueChunks = Array.from(new Map(allChunks.map(c => [c.id, c])).values())
-      .slice(0, 10); // Reducido de 15 a 10 fragmentos (~3k tokens)
+    if (candidates.length === 0) {
+      const fallbackMsg = "Lo siento, no he encontrado información específica en la normativa. ¿Deseas consultar con administración?";
+      await supabaseAdmin.from('ai_queries').update({ answer: fallbackMsg, status: 'completed' }).eq('id', queryId);
+      return { queryId, question, answer: fallbackMsg, sourceDocuments: [], tokensUsed: { input: 0, output: 0 } };
+    }
 
-    // 3. OBTENER NOMBRES DE DOCUMENTOS PARA CONTEXTO
-    const docIds = [...new Set(uniqueChunks.map(c => c.document_id))];
+    // 3. CAPA 3: RE-RANKING
+    const topCandidates = await rerankChunks(question, candidates);
+
+    // 4. CAPA 4: PARENT-CHILD CONTEXT RETRIEVAL
+    const parentIds = [...new Set(topCandidates.map(c => c.parent_id).filter(id => !!id))];
+    let contextChunks = [];
+
+    if (parentIds.length > 0) {
+      // Recuperar los bloques PADRE para mayor contexto
+      const { data: parents } = await supabaseAdmin
+        .from('document_parents')
+        .select('id, document_id, text')
+        .in('id', parentIds);
+      
+      if (parents && parents.length > 0) {
+        contextChunks = parents.map(p => ({
+          text: p.text,
+          document_id: p.document_id
+        }));
+      }
+    } else {
+      // Fallback a los textos de los chunks hijos si no hay padres
+      contextChunks = topCandidates.map(c => ({
+        text: c.text,
+        document_id: c.document_id
+      }));
+    }
+
+    // 5. OBTENER NOMBRES DE DOCUMENTOS
+    const docIds = [...new Set(contextChunks.map(c => c.document_id))];
     const { data: docInfo } = await supabaseAdmin.from('documents').select('id, name').in('id', docIds);
     const docMap = new Map((docInfo || []).map(d => [d.id, d.name]));
 
-    const contextText = uniqueChunks.map(c => {
+    const contextText = contextChunks.map(c => {
       const docName = docMap.get(c.document_id) || 'Documento';
       return `[DOCUMENTO: ${docName}]\n${c.text}`;
     }).join('\n\n---\n\n');
 
-    // 4. GENERAR RESPUESTA
-    let answer = '';
-    let tokensUsed = { input: 0, output: 0 };
+    // 6. GENERAR RESPUESTA FINAL
+    const systemPrompt = `Eres el Asistente Inteligente de la Escuela Bilingüe Maquilishuat (EBM). 
+Tu misión es dar respuestas COMPLETAS, ÁGILES y PRECISAS basadas en los documentos.
 
-    if (uniqueChunks.length > 0) {
-      const systemPrompt = `Eres el Asistente Inteligente de la Escuela Bilingüe Maquilishuat (EBM). 
-Tu misión es dar respuestas COMPLETAS, ÁGILES, RACIONALES y AMIGABLES basadas exclusivamente en los fragmentos de documentos proporcionados.
+REGLAS:
+1. Usa exclusivamente el contexto proporcionado.
+2. Si la respuesta está en el CALENDARIO, sé muy detallado con fechas.
+3. Si no sabes la respuesta, admítelo.
+4. Tono amable y profesional.`;
 
-REGLAS DE ORO:
-1. CONCISIÓN: No te extiendas innecesariamente pero cierra todas las ideas.
-2. RACIONALIDAD: Si te preguntan por un protocolo (ej. drogas, conducta), explica los pasos de forma lógica y clara.
-3. TONO: Profesional pero cercano.
-4. CALENDARIO: Si hay fechas en los fragmentos, dales prioridad absoluta.
-5. NO REPETIR: No listes todos los documentos consultados.
-6. SI NO SABES: Si los fragmentos no contienen la respuesta, di amablemente que no se encuentra en la normativa actual.`;
+    const result = await generateResponse(question, [contextText], systemPrompt);
 
-      const result = await generateResponse(question, [contextText], systemPrompt);
-      answer = result.answer;
-      tokensUsed = result.tokensUsed;
-    } else {
-      answer = "Lo siento, no he encontrado información específica en la normativa que responda a tu pregunta. ¿Te gustaría que lo consulte con el área administrativa?";
-    }
-
-    // 5. FINALIZAR
+    // 7. FINALIZAR
     const documentNames = Array.from(docMap.values());
     await supabaseAdmin.from('ai_queries').update({
-      answer,
+      answer: result.answer,
       source_documents: documentNames,
-      model_used: 'gemini-3.5-flash-smart-rag',
-      tokens_used: tokensUsed,
+      model_used: 'gemini-3.5-flash-advanced-rag',
+      tokens_used: result.tokensUsed,
       status: 'completed',
       completed_at: new Date().toISOString()
     }).eq('id', queryId);
@@ -173,24 +289,18 @@ REGLAS DE ORO:
       await logDocumentAccess(docId, userId, 'query', `Query: ${question}`, ipAddress);
     }
 
-    return { queryId, question, answer, sourceDocuments: [], tokensUsed };
+    return { queryId, question, answer: result.answer, sourceDocuments: documentNames, tokensUsed: result.tokensUsed };
 
   } catch (error: any) {
     console.error('[processUserQuery Error]:', error);
-    let errorMsg = "Lo siento, tengo dificultades técnicas. Por favor, intenta de nuevo en un momento.";
-    if (error.message?.includes('LIMITE_EXCEDIDO')) errorMsg = "He alcanzado mi límite de procesamiento. Por favor, espera 30 segundos.";
-    if (error.message?.includes('CONTENIDO_BLOQUEADO')) errorMsg = "No puedo responder a esa pregunta por motivos de seguridad. Por favor, reformúlala.";
-
+    const errorMsg = "Tengo dificultades técnicas. Intenta de nuevo pronto.";
     if (supabaseAdmin) {
-        await supabaseAdmin.from('ai_queries').update({ 
-            status: 'error', 
-            error_message: error.message,
-            completed_at: new Date().toISOString()
-        }).eq('id', queryId);
+      await supabaseAdmin.from('ai_queries').update({ status: 'error', error_message: error.message }).eq('id', queryId);
     }
     return { queryId, question, answer: errorMsg, sourceDocuments: [], tokensUsed: { input: 0, output: 0 } };
   }
 }
+
 
 /**
  * Calificar la utilidad de una respuesta
