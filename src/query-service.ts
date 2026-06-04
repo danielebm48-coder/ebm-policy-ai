@@ -228,7 +228,7 @@ export async function processUserQuery(
 
     // 4. CAPA 4: PARENT-CHILD CONTEXT RETRIEVAL
     const parentIds = [...new Set(topCandidates.map(c => c.parent_id).filter(id => !!id))];
-    let contextChunks = [];
+    let contextChunks: { text: string; document_id: string }[] = [];
 
     if (parentIds.length > 0) {
       // Recuperar los bloques PADRE para mayor contexto
@@ -238,14 +238,14 @@ export async function processUserQuery(
         .in('id', parentIds);
       
       if (parents && parents.length > 0) {
-        contextChunks = parents.map(p => ({
+        contextChunks = parents.map((p: any) => ({
           text: p.text,
           document_id: p.document_id
         }));
       }
     } else {
       // Fallback a los textos de los chunks hijos si no hay padres
-      contextChunks = topCandidates.map(c => ({
+      contextChunks = topCandidates.map((c: any) => ({
         text: c.text,
         document_id: c.document_id
       }));
