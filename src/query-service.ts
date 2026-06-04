@@ -120,37 +120,66 @@ Pregunta: "${question}"`;
 
 /**
  * CAPA 2: Búsqueda Híbrida (Vectorial + Full-Text Search)
+ * Optimizada para ser resiliente a fallos de cuota de embeddings.
  */
 async function hybridSearch(question: string, limit: number = 40): Promise<ChunkWithSimilarity[]> {
-  try {
-    const questionEmbedding = await generateEmbedding(question);
-    const db = supabaseAdmin || supabaseClient;
-    
-    console.log(`[Advanced RAG] Fetching up to ${limit} candidates for: "${question}"`);
-    
-    // Llamada a la nueva función RPC de búsqueda híbrida
-    const { data, error } = await db.rpc('match_documents_hybrid', {
-      query_embedding: questionEmbedding,
-      query_text: question,
-      match_count: limit,
-      match_threshold: 0.05, // Umbral mucho más bajo para no perder nada
-      full_text_weight: 0.5,
-      vector_weight: 0.5
-    });
+  const db = supabaseAdmin || supabaseClient;
+  let questionEmbedding: number[] | null = null;
 
-    if (error) {
-      console.warn('[Hybrid Search RPC Error - Falling back to Vector]:', error.message);
-      return await findSimilarChunks(question, limit);
+  try {
+    // Intentar generar embedding
+    questionEmbedding = await generateEmbedding(question);
+  } catch (error) {
+    console.warn('[Hybrid Search] Embedding API failed or quota exceeded. Falling back to Full-Text Search only.');
+  }
+
+  try {
+    if (questionEmbedding) {
+      // BÚSQUEDA HÍBRIDA (Vector + FTS)
+      const { data, error } = await db.rpc('match_documents_hybrid', {
+        query_embedding: questionEmbedding,
+        query_text: question,
+        match_count: limit,
+        match_threshold: 0.05,
+        full_text_weight: 0.5,
+        vector_weight: 0.5
+      });
+
+      if (!error && data) {
+        return data.map((c: any) => ({
+          id: c.id,
+          document_id: c.document_id,
+          parent_id: c.parent_id,
+          text: c.text,
+          similarity: c.combined_score || 0
+        }));
+      }
+      console.warn('[Hybrid Search RPC Error]:', error?.message);
     }
 
-    console.log(`[Advanced RAG] Found ${data?.length || 0} hybrid candidates.`);
-    return (data || []).map((c: any) => ({
+    // FALLBACK: Búsqueda de Texto Completo Pura (FTS) si falla el vector o el RPC
+    console.log('[Hybrid Search] Performing pure Full-Text Search fallback.');
+    const { data: ftsData, error: ftsError } = await db
+      .from('document_chunks')
+      .select('id, document_id, parent_id, text, ts_rank_cd(fts_vector, plainto_tsquery(\'spanish\', $1)) as rank')
+      .filter('fts_vector', '@@', `plainto_tsquery('spanish', '${question.replace(/'/g, "''")}')`)
+      .order('rank', { ascending: false })
+      .limit(limit);
+
+    if (ftsError) {
+      // Segundo Fallback: Búsqueda por palabras clave manual (JS)
+      console.warn('[Hybrid Search] FTS Fallback failed:', ftsError.message);
+      return await findKeywordChunks(question, 'any', 10);
+    }
+
+    return (ftsData || []).map((c: any) => ({
       id: c.id,
       document_id: c.document_id,
       parent_id: c.parent_id,
       text: c.text,
-      similarity: c.combined_score || 0
+      similarity: c.rank || 0
     }));
+
   } catch (error) {
     console.error('[Hybrid Search Error]:', error);
     return [];
