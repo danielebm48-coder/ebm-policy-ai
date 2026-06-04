@@ -60,28 +60,39 @@ async function hybridSearch(question: string, limit: number = 20): Promise<Chunk
 
   const { data: ftsResults } = await ftsQuery;
 
-  // 2. Búsqueda Vectorial (Conceptual) - Captura errores de cuota silenciosamente
+  // 2. Búsqueda Vectorial (Conceptual)
   let vectorResults: any[] = [];
   try {
     const embedding = await generateEmbedding(question);
-    const { data: vData } = await db.rpc('match_documents', {
-      query_embedding: embedding,
-      match_count: limit,
-      match_threshold: 0.05
-    });
-    if (vData) vectorResults = vData;
+    if (embedding && embedding.length === 3072) {
+      const { data: vData, error: vError } = await db.rpc('match_documents', {
+        query_embedding: embedding,
+        match_count: limit,
+        match_threshold: 0.05
+      });
+      if (!vError && vData) vectorResults = vData;
+    }
   } catch (e) {
-    console.warn('[HybridSearch] IA conceptually offline');
+    console.warn('[HybridSearch] IA conceptually offline or quota exceeded');
   }
 
-  // 3. Combinación (RRF simplificado)
+  // 3. Combinación (RRF - Reciprocal Rank Fusion)
   const allCandidates = new Map<string, any>();
-  (ftsResults || []).forEach((c, i) => allCandidates.set(c.id, { ...c, score: (1.0 / (i + 1)) + 2.0 }));
-  (vectorResults || []).forEach((c, i) => {
+  
+  // Procesar FTS (Alta prioridad)
+  (ftsResults || []).forEach((c: any, i: number) => {
+    allCandidates.set(c.id, { ...c, score: (1.0 / (i + 1)) + 2.0 });
+  });
+
+  // Procesar Vectores
+  vectorResults.forEach((c: any, i: number) => {
     const existing = allCandidates.get(c.id);
-    const vScore = 1.0 / (i + 1);
-    if (existing) existing.score += vScore;
-    else allCandidates.set(c.id, { ...c, score: vScore });
+    const vScore = (1.0 / (i + 1));
+    if (existing) {
+      existing.score += vScore;
+    } else {
+      allCandidates.set(c.id, { ...c, score: vScore });
+    }
   });
 
   return Array.from(allCandidates.values())

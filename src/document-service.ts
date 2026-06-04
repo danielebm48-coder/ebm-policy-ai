@@ -205,6 +205,8 @@ export async function processDocumentChunks(documentId: string, text: string): P
     throw new Error('Admin client not configured');
   }
 
+  console.log(`[Ingestion] Starting Parent-Child processing for ${documentId}...`);
+
   try {
     // 1. Crear Chunks PADRE (Contexto: ~3500 chars / ~1000 tokens)
     const parentChunks = splitTextIntoChunks(text, 3500, 500);
@@ -220,12 +222,17 @@ export async function processDocumentChunks(documentId: string, text: string): P
       .select('id, chunk_number');
 
     if (parentError) {
-      // Fallback: Si la tabla document_parents no existe aún, usar el método antiguo
-      console.warn('document_parents table might not exist, falling back to simple chunking');
+      console.error('[Ingestion] Error creating parents:', parentError.message);
+      // Fallback: Si la tabla document_parents no existe aún o falla, usar el método antiguo
       return await processDocumentChunksLegacy(documentId, text);
     }
 
+    if (!savedParents || savedParents.length === 0) {
+      throw new Error('Failed to retrieve saved parents.');
+    }
+
     const parentMap = new Map(savedParents.map(p => [p.chunk_number, p.id]));
+    console.log(`[Ingestion] Created ${savedParents.length} parents.`);
 
     // 2. Crear Chunks HIJO (Vectores: ~800 chars / ~250 tokens)
     const childInserts = [];
@@ -243,7 +250,7 @@ export async function processDocumentChunks(documentId: string, text: string): P
         try {
           embedding = await generateEmbedding(childText);
         } catch (error) {
-          console.warn(`Warning: Could not generate embedding for child chunk ${overallChildIndex}:`, error);
+          console.warn(`[Ingestion] Quota/API error generating embedding for chunk ${overallChildIndex}. Search will rely on text ranking.`);
         }
 
         childInserts.push({
@@ -260,10 +267,16 @@ export async function processDocumentChunks(documentId: string, text: string): P
       }
     }
 
-    // Insertar hijos en lotes
+    // 3. Insertar hijos en lotes con verificación de error
     const batchSize = 10;
     for (let i = 0; i < childInserts.length; i += batchSize) {
-      await supabaseAdmin.from('document_chunks').insert(childInserts.slice(i, i + batchSize));
+      const batch = childInserts.slice(i, i + batchSize);
+      const { error: childError } = await supabaseAdmin.from('document_chunks').insert(batch);
+      
+      if (childError) {
+        console.error('[Ingestion] Error inserting children batch:', childError.message);
+        throw new Error(`Failed to insert children batch: ${childError.message}`);
+      }
     }
 
     console.log(`✅ Processed ${parentChunks.length} parents and ${childInserts.length} children for ${documentId}`);
