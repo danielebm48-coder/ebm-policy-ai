@@ -22,7 +22,7 @@ const RoleDashboard: React.FC = () => {
   const apiBaseUrl = (__API_BASE_URL__ || window.location.origin || '').replace(/\/$/, '');
   const roleProfiles: Record<string, { userId: string; email: string }> = {
     admin: { userId: 'u_system', email: 'system@colegio.edu' },
-    directivo: { userId: 'u_directivo', email: 'ana@colegio.edu' },
+    directivo: { userId: 'u_dguzman_admin', email: 'dguzman@ebm.edu.sv' },
     profesor: { userId: 'u_profesor', email: 'luis@colegio.edu' },
     alumno: { userId: 'u_alumno', email: 'mario@colegio.edu' },
     padre: { userId: 'u_padre', email: 'carmen@colegio.edu' },
