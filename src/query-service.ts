@@ -142,81 +142,76 @@ async function identifyTargetDocuments(question: string): Promise<string[]> {
 }
 
 /**
- * MOTOR DE BÚSQUEDA HÍBRIDO (Optimizado estilo Google Search)
+ * MOTOR DE BÚSQUEDA HÍBRIDO (Simplificado y Robusto)
+ * Diseñado para no fallar nunca y encontrar documentos por palabras clave.
  */
-async function hybridSearch(question: string, limit: number = 40): Promise<ChunkWithSimilarity[]> {
+async function hybridSearch(question: string, limit: number = 30): Promise<ChunkWithSimilarity[]> {
   const db = supabaseAdmin || supabaseClient;
-  
-  // 1. Limpiar la pregunta para la búsqueda
   const cleanQuestion = question.replace(/[^\w\s]/gi, ' ').trim();
   
-  // 2. Intentar identificar documentos por título (Prioridad Máxima)
+  if (!cleanQuestion) return [];
+
+  // A. Buscar si el nombre de algún documento coincide con la pregunta
   const targetDocIds = await identifyTargetDocuments(question);
 
-  // 3. Búsqueda de Texto Completo usando WEBSEARCH (estilo Google)
-  // websearch_to_tsquery es mucho más flexible que plainto_tsquery
+  // B. Búsqueda por Texto (Capa Local Blindada)
+  // Usamos .textSearch con 'websearch' para máxima flexibilidad (estilo Google)
   let ftsQuery = db.from('document_chunks')
-    .select(`
-      id, 
-      document_id, 
-      parent_id, 
-      text,
-      ts_rank_cd(fts_vector, websearch_to_tsquery('spanish', '${cleanQuestion}')) as rank
-    `)
-    .filter('fts_vector', '@@', `websearch_to_tsquery('spanish', '${cleanQuestion}')`)
-    .order('rank', { ascending: false })
+    .select('id, document_id, parent_id, text')
+    .textSearch('fts_vector', cleanQuestion, { 
+      config: 'spanish',
+      type: 'websearch' 
+    })
     .limit(limit);
 
+  // Si detectamos un documento por nombre, priorizamos su contenido
   if (targetDocIds.length > 0) {
     ftsQuery = ftsQuery.or(`document_id.in.(${targetDocIds.join(',')})`);
   }
 
-  const { data: ftsResults } = await ftsQuery;
+  const { data: ftsResults, error: ftsError } = await ftsQuery;
+  if (ftsError) console.error('[Retrieval] FTS Error:', ftsError.message);
 
-  // 4. Búsqueda Vectorial (Conceptual)
+  // C. Búsqueda Vectorial (Conceptual) - Solo si la API responde
   let vectorResults: any[] = [];
   try {
     const embedding = await generateEmbedding(question);
-    const { data: vData } = await db.rpc('match_documents_hybrid', {
+    const { data: vData } = await db.rpc('match_documents', {
       query_embedding: embedding,
-      query_text: cleanQuestion,
       match_count: limit,
-      match_threshold: 0.01, // Umbral casi nulo para capturar TODO
-      full_text_weight: 0.5,
-      vector_weight: 0.5
+      match_threshold: 0.01 // Umbral muy bajo
     });
     if (vData) vectorResults = vData;
   } catch (e) {
-    console.warn('[Retrieval] Vector search failed, relying on FTS');
+    console.warn('[Retrieval] IA conceptual desactivada temporalmente (cuota)');
   }
 
-  // 5. Fusión de Resultados (Priorizando lo que sea que hayamos encontrado)
+  // D. Combinar Resultados
   const allCandidates = new Map<string, any>();
 
-  // Procesar lo que encontró el motor de texto
+  // Prioridad 1: Resultados de texto (más exactos para procesos/nombres)
   (ftsResults || []).forEach((c: any, i: number) => {
-    allCandidates.set(c.id, { ...c, score: (c.rank || 0) + 2.0 }); // Bonus por texto
+    allCandidates.set(c.id, { ...c, score: (1.0 / (i + 1)) + 2.0 }); 
   });
 
-  // Procesar lo conceptual
+  // Prioridad 2: Resultados conceptuales
   (vectorResults || []).forEach((c: any, i: number) => {
     const existing = allCandidates.get(c.id);
+    const vScore = (1.0 / (i + 1));
     if (existing) {
-      existing.score += 1.0;
+      existing.score += vScore;
     } else {
-      allCandidates.set(c.id, { ...c, score: 1.0 });
+      allCandidates.set(c.id, { ...c, score: vScore });
     }
   });
 
-  // 6. Si aún no hay nada, traer los primeros fragmentos de los documentos que coincidan en el nombre
+  // E. Fallback Crítico: Si nada funciona, traer lo más reciente del documento sospechoso
   if (allCandidates.size === 0 && targetDocIds.length > 0) {
-    const { data: fallbackChunks } = await db
-      .from('document_chunks')
+    const { data: fallback } = await db.from('document_chunks')
       .select('id, document_id, parent_id, text')
       .in('document_id', targetDocIds)
-      .limit(10);
-    
-    (fallbackChunks || []).forEach(c => allCandidates.set(c.id, { ...c, score: 0.5 }));
+      .limit(5);
+    (fallback || []).forEach(c => allCandidates.set(c.id, { ...c, score: 0.1 }));
   }
 
   return Array.from(allCandidates.values())
