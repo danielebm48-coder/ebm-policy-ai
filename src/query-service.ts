@@ -142,70 +142,82 @@ async function identifyTargetDocuments(question: string): Promise<string[]> {
 }
 
 /**
- * MOTOR DE BÚSQUEDA HÍBRIDO (PDFgear Style)
- * 1. Intenta Búsqueda por Palabras Clave Exactas (FTS) - Prioridad Alta
- * 2. Usa Vectores solo como refinamiento o si el FTS falla
- * 3. Bloquea la búsqueda a documentos específicos si se detectan en la pregunta
+ * MOTOR DE BÚSQUEDA HÍBRIDO (Optimizado estilo Google Search)
  */
-async function hybridSearch(question: string, limit: number = 30): Promise<ChunkWithSimilarity[]> {
+async function hybridSearch(question: string, limit: number = 40): Promise<ChunkWithSimilarity[]> {
   const db = supabaseAdmin || supabaseClient;
   
-  // A. Identificar si hay documentos específicos mencionados (Locking)
+  // 1. Limpiar la pregunta para la búsqueda
+  const cleanQuestion = question.replace(/[^\w\s]/gi, ' ').trim();
+  
+  // 2. Intentar identificar documentos por título (Prioridad Máxima)
   const targetDocIds = await identifyTargetDocuments(question);
-  console.log(`[Retrieval] Target documents identified: ${targetDocIds.length}`);
 
-  // B. Búsqueda por Texto Completo (Capa Local Resiliente)
-  // Nota: Usamos una búsqueda de texto simple vía Supabase para evitar errores de parseo complejos
+  // 3. Búsqueda de Texto Completo usando WEBSEARCH (estilo Google)
+  // websearch_to_tsquery es mucho más flexible que plainto_tsquery
   let ftsQuery = db.from('document_chunks')
-    .select('id, document_id, parent_id, text')
-    .textSearch('text', question, { 
-      config: 'spanish',
-      type: 'plain' 
-    })
+    .select(`
+      id, 
+      document_id, 
+      parent_id, 
+      text,
+      ts_rank_cd(fts_vector, websearch_to_tsquery('spanish', '${cleanQuestion}')) as rank
+    `)
+    .filter('fts_vector', '@@', `websearch_to_tsquery('spanish', '${cleanQuestion}')`)
+    .order('rank', { ascending: false })
     .limit(limit);
 
   if (targetDocIds.length > 0) {
-    ftsQuery = ftsQuery.in('document_id', targetDocIds);
+    ftsQuery = ftsQuery.or(`document_id.in.(${targetDocIds.join(',')})`);
   }
 
-  const { data: ftsResults, error: ftsError } = await ftsQuery;
-  if (ftsError) console.warn('[Retrieval] FTS Query Error:', ftsError.message);
+  const { data: ftsResults } = await ftsQuery;
 
-  // C. Búsqueda Vectorial (Similitud Semántica) - Solo si tenemos cuota
+  // 4. Búsqueda Vectorial (Conceptual)
   let vectorResults: any[] = [];
   try {
     const embedding = await generateEmbedding(question);
-    const { data: vData, error: vError } = await db.rpc('match_documents_hybrid', {
+    const { data: vData } = await db.rpc('match_documents_hybrid', {
       query_embedding: embedding,
-      query_text: question,
+      query_text: cleanQuestion,
       match_count: limit,
-      match_threshold: 0.1,
-      full_text_weight: 0.3,
-      vector_weight: 0.7
+      match_threshold: 0.01, // Umbral casi nulo para capturar TODO
+      full_text_weight: 0.5,
+      vector_weight: 0.5
     });
-    if (!vError && vData) vectorResults = vData;
+    if (vData) vectorResults = vData;
   } catch (e) {
-    console.warn('[Retrieval] Vector search skipped (quota/API error)');
+    console.warn('[Retrieval] Vector search failed, relying on FTS');
   }
 
-  // D. Fusión de Resultados
+  // 5. Fusión de Resultados (Priorizando lo que sea que hayamos encontrado)
   const allCandidates = new Map<string, any>();
 
-  // Procesar FTS
+  // Procesar lo que encontró el motor de texto
   (ftsResults || []).forEach((c: any, i: number) => {
-    allCandidates.set(c.id, { ...c, score: (1.0 / (i + 1)) * 1.5 });
+    allCandidates.set(c.id, { ...c, score: (c.rank || 0) + 2.0 }); // Bonus por texto
   });
 
-  // Procesar Vectoriales
+  // Procesar lo conceptual
   (vectorResults || []).forEach((c: any, i: number) => {
     const existing = allCandidates.get(c.id);
-    const vectorScore = 1.0 / (i + 1);
     if (existing) {
-      existing.score += vectorScore;
+      existing.score += 1.0;
     } else {
-      allCandidates.set(c.id, { ...c, score: vectorScore });
+      allCandidates.set(c.id, { ...c, score: 1.0 });
     }
   });
+
+  // 6. Si aún no hay nada, traer los primeros fragmentos de los documentos que coincidan en el nombre
+  if (allCandidates.size === 0 && targetDocIds.length > 0) {
+    const { data: fallbackChunks } = await db
+      .from('document_chunks')
+      .select('id, document_id, parent_id, text')
+      .in('document_id', targetDocIds)
+      .limit(10);
+    
+    (fallbackChunks || []).forEach(c => allCandidates.set(c.id, { ...c, score: 0.5 }));
+  }
 
   return Array.from(allCandidates.values())
     .sort((a, b) => b.score - a.score)
@@ -218,6 +230,7 @@ async function hybridSearch(question: string, limit: number = 30): Promise<Chunk
       similarity: c.score
     }));
 }
+
 
 /**
  * CAPA 4: Re-ranking (Filtro de Relevancia Semántica)
