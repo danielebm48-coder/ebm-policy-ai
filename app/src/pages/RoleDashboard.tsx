@@ -203,13 +203,32 @@ const RoleDashboard: React.FC = () => {
                   </div>
                 )}
                 {msg.sender === 'ai' && msg.id !== '1' && !msg.rated && (
-                  <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem' }}>
-                    <span style={{ fontSize: '0.65rem', color: '#64748b' }}>¿Fue útil?</span>
+                  <div style={{ 
+                    marginTop: '0.85rem', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.4rem', 
+                    borderTop: '1px solid #f1f5f9', 
+                    paddingTop: '0.6rem',
+                    animation: 'fadeIn 0.5s ease'
+                  }}>
+                    <span style={{ fontSize: '0.7rem', color: '#94a3b8', marginRight: '0.2rem' }}>Valorar respuesta:</span>
                     {[1, 2, 3, 4, 5].map((star) => (
                       <button 
                         key={star} 
                         onClick={() => handleRate(msg.id, star)}
-                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '0.8rem', padding: 0 }}
+                        onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.2)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                        style={{ 
+                          background: 'transparent', 
+                          border: 'none', 
+                          cursor: 'pointer', 
+                          fontSize: '0.9rem', 
+                          padding: '0 2px',
+                          transition: 'transform 0.2s ease',
+                          filter: 'grayscale(0.5)',
+                          opacity: 0.7
+                        }}
                         title={`${star} estrellas`}
                       >
                         ⭐
@@ -218,8 +237,17 @@ const RoleDashboard: React.FC = () => {
                   </div>
                 )}
                 {msg.rated && (
-                  <div style={{ marginTop: '0.5rem', fontSize: '0.65rem', color: 'var(--action-green)', fontStyle: 'italic' }}>
-                    ¡Gracias por tu calificación!
+                  <div style={{ 
+                    marginTop: '0.6rem', 
+                    fontSize: '0.65rem', 
+                    color: 'var(--action-green)', 
+                    fontStyle: 'italic',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.3rem',
+                    animation: 'fadeIn 0.3s ease'
+                  }}>
+                    <span style={{ fontSize: '0.8rem' }}>✓</span> Calificación registrada. ¡Gracias!
                   </div>
                 )}
               </div>
