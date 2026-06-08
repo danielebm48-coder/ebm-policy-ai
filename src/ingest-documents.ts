@@ -45,6 +45,8 @@ async function ingestPolicies() {
   }
   
   const files = fs.readdirSync(policiesDir);
+  console.log(`Encontrados ${files.length} archivos para procesar.`);
+
   const roles = ['profesor', 'alumno', 'padre', 'directivo', 'admin'];
 
   for (const file of files) {
@@ -61,7 +63,7 @@ async function ingestPolicies() {
           continue;
         }
 
-        const name = file.replace(ext, '').replace(/-/g, ' ');
+        const name = file.replace(ext, '').replace(/[-_]/g, ' ').trim();
         
         // Determinar categoría y tipo básico
         let type: 'policy' | 'manual' | 'procedure' | 'handbook' | 'other' = 'policy';
@@ -73,10 +75,12 @@ async function ingestPolicies() {
         if (lowerFile.includes('perfil') || lowerFile.includes('descripcion')) type = 'other';
 
         if (lowerFile.includes('convivencia')) category = 'Convivencia';
-        else if (lowerFile.includes('evaluacion')) category = 'Académico';
+        else if (lowerFile.includes('evaluacion') || lowerFile.includes('evaluación')) category = 'Académico';
         else if (lowerFile.includes('seguridad')) category = 'Seguridad';
-        else if (lowerFile.includes('inclusion')) category = 'Inclusión';
-        else if (lowerFile.includes('linguistica')) category = 'Lingüística';
+        else if (lowerFile.includes('inclusion') || lowerFile.includes('inclusión')) category = 'Inclusión';
+        else if (lowerFile.includes('linguistica') || lowerFile.includes('lingüística')) category = 'Lingüística';
+
+        console.log(`Ingestando como [${type}] en categoría [${category}]...`);
 
         const doc = await createDocument(
           name.charAt(0).toUpperCase() + name.slice(1),
@@ -90,14 +94,15 @@ async function ingestPolicies() {
         console.log(`✅ Documento creado con ID: ${doc.id}`);
 
         if (supabaseAdmin) {
-          console.log(`🔐 Configurando permisos...`);
+          console.log(`🔐 Configurando permisos para todos los roles...`);
           const accessInserts = roles.map(role => ({
             document_id: doc.id,
             role_id: role,
             access_level: 'ask'
           }));
 
-          await supabaseAdmin.from('document_access_policies').insert(accessInserts);
+          const { error } = await supabaseAdmin.from('document_access_policies').upsert(accessInserts, { onConflict: 'document_id,role_id' });
+          if (error) console.error(`❌ Error configurando permisos: ${error.message}`);
         }
 
       } catch (error) {

@@ -64,7 +64,7 @@ async function hybridSearch(question: string, limit: number = 20): Promise<Chunk
   let vectorResults: any[] = [];
   try {
     const embedding = await generateEmbedding(question);
-    if (embedding && embedding.length === 3072) {
+    if (embedding && embedding.length === 1536) {
       const { data: vData, error: vError } = await db.rpc('match_documents', {
         query_embedding: embedding,
         match_count: limit,

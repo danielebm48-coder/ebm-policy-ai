@@ -20,18 +20,18 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
   try {
     const response = await fetch(
-      `${GEMINI_API_URL}/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
+      `${GEMINI_API_URL}/gemini-embedding-001:embedContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'models/text-embedding-004',
+          model: 'models/gemini-embedding-001',
           content: {
             parts: [{ text: text }],
           },
-          outputDimensionality: 1536, // FORZAR 1536 para que la DB lo acepte
+          outputDimensionality: 1536,
         }),
       }
     );

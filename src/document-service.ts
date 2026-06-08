@@ -175,13 +175,22 @@ export async function createDocument(
 }
 
 /**
- * Eliminar documento y todos sus artefactos
+ * Eliminar documento y todos sus artefactos (físicamente de la DB)
  */
 export async function deleteDocument(documentId: string): Promise<void> {
   if (!supabaseAdmin) throw new Error('Admin client not configured');
 
   try {
-    // La eliminación de document_chunks y document_parents ocurre por CASCADE en la DB
+    console.log(`🗑️  Iniciando eliminación física del documento: ${documentId}`);
+    
+    // 1. Eliminar el registro principal. 
+    // Debido a ON DELETE CASCADE en la base de datos (init.sql), 
+    // esto eliminará automáticamente:
+    // - document_chunks
+    // - document_access_policies
+    // - document_audit_logs (si tiene cascade)
+    // - document_parents (si existen)
+    
     const { error } = await supabaseAdmin
       .from('documents')
       .delete()
@@ -189,9 +198,9 @@ export async function deleteDocument(documentId: string): Promise<void> {
 
     if (error) throw error;
     
-    console.log(`✅ Document ${documentId} and all its artifacts deleted.`);
+    console.log(`✅ Documento ${documentId} y todos sus fragmentos han sido eliminados permanentemente.`);
   } catch (error) {
-    console.error('Error deleting document:', error);
+    console.error('Error deleting document physically:', error);
     throw error;
   }
 }

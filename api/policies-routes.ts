@@ -597,19 +597,12 @@ router.delete('/documents/:documentId', requireAuth, async (req: AuthRequest, re
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    if (!supabaseAdmin) throw new Error('Admin client not configured');
-
-    const { error } = await supabaseAdmin
-      .from('documents')
-      .update({ status: 'archived', last_updated: new Date().toISOString() })
-      .eq('id', documentId);
-
-    if (error) throw error;
-
-    await logDocumentAccess(documentId, user.id, 'delete', 'Document archived', req.ip);
-    res.json({ success: true, message: 'Document archived' });
+    await deleteDocument(documentId);
+    await logDocumentAccess(documentId, user.id, 'delete', 'Document permanently deleted', req.ip);
+    
+    res.json({ success: true, message: 'Document and all its fragments deleted permanently' });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to archive document', details: error instanceof Error ? error.message : 'Unknown error' });
+    res.status(500).json({ error: 'Failed to delete document', details: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 
