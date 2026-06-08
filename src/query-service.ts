@@ -129,7 +129,7 @@ async function hybridSearch(question: string, roleId: string, limit: number = 20
 }
 
 /**
- * PROCESAMIENTO PRINCIPAL (Optimizado para Cuota de Tokens)
+ * PROCESAMIENTO PRINCIPAL (Optimizado para Cuota de Tokens y Diálogo)
  */
 export async function processUserQuery(
   userId: string,
@@ -143,8 +143,27 @@ export async function processUserQuery(
   try {
     await supabaseAdmin.from('ai_queries').insert([{ id: queryId, user_id: userId, user_role: userRole, question, status: 'processing' }]);
 
-    // A. Búsqueda Multinivel (Escenarios + Chunks)
-    const candidates = await hybridSearch(question, userRole, 10);
+    // A. Obtener historial reciente para contexto (Memoria de Conversación)
+    const { data: history } = await supabaseAdmin
+      .from('ai_queries')
+      .select('question, answer')
+      .eq('user_id', userId)
+      .eq('status', 'completed')
+      .order('requested_at', { ascending: false })
+      .limit(2);
+
+    const chatHistory = (history || [])
+      .reverse()
+      .map(h => `Usuario: ${h.question}\nAsistente: ${h.answer}`)
+      .join('\n\n');
+
+    // B. Búsqueda Multinivel (Escenarios + Chunks)
+    // Si la pregunta es corta (ej: "4to grado"), incluimos la pregunta anterior en la búsqueda para mantener contexto
+    const searchContext = (question.length < 20 && history?.[0]) 
+      ? `${history[0].question} ${question}` 
+      : question;
+
+    const candidates = await hybridSearch(searchContext, userRole, 10);
 
     if (candidates.length === 0) {
       const fallback = "La normativa actual define los lineamientos generales sobre este tema; sin embargo, para detalles específicos de implementación o casos excepcionales, le recomendamos validar directamente con la Coordinación de Nivel o la Administración, quienes podrán brindarle una guía personalizada.";
@@ -152,36 +171,27 @@ export async function processUserQuery(
       return { queryId, question, answer: fallback, sourceDocuments: [], tokensUsed: { input: 0, output: 0 } };
     }
 
-    // B. Contexto (Recuperar bloques grandes, priorizando Q&A)
+    // C. Preparar contexto (Priorizando Q&A y fragmentos relevantes)
     const contextChunks = candidates.map(c => ({ text: c.text, document_id: c.document_id, parent_id: c.parent_id }));
-    const parentIds = [...new Set(contextChunks.map(c => c.parent_id).filter(id => !!id))];
-    
-    let finalContext = "";
-    if (parentIds.length > 0) {
-      const { data: parents } = await supabaseAdmin.from('document_parents').select('document_id, text').in('id', parentIds);
-      if (parents) {
-        finalContext += parents.map(p => p.text).join('\n\n---\n\n');
-      }
-    }
-    
-    // Añadir el texto de los candidatos directamente (especialmente los Q&A)
-    finalContext += "\n\n" + contextChunks.map(c => c.text).join('\n\n---\n\n');
-
     const docIds = [...new Set(contextChunks.map(c => c.document_id))];
     const { data: docInfo } = await supabaseAdmin.from('documents').select('id, name').in('id', docIds);
     const docMap = new Map((docInfo || []).map(d => [d.id, d.name]));
 
-    // C. Respuesta (Optimizado con Tono Institucional Maquilishuat)
-    const systemPrompt = `Eres el Asistente Institucional de la Escuela Bilingüe Maquilishuat (EBM). 
-Tu misión es proporcionar información clara, precisa y profesional sobre las normativas de la institución.
+    const finalContext = contextChunks.map(c => `[DOC: ${docMap.get(c.document_id) || 'Info'}]\n${c.text}`).join('\n\n---\n\n');
 
-REGLAS CRÍTICAS DE COMUNICACIÓN:
-1. TONO: Institucional, amable y empático. Eres una extensión de la oficina de atención al usuario.
-2. LENGUAJE PROHIBIDO: No uses jerga técnica de IA. NUNCA menciones "fragmentos", "contexto proporcionado", "base de datos", "sección del documento" o "el texto disponible".
-3. TRATAMIENTO: Si la información es clara en la normativa, respóndela directamente con seguridad.
-4. MANEJO DE VACÍOS: Si la información específica no está detallada en la normativa consultada, NO digas "no lo sé" o "está incompleto". En su lugar, responde de forma elegante: 
-   "La normativa actual define los lineamientos generales sobre este tema; sin embargo, para detalles específicos de implementación o casos excepcionales, le recomendamos validar directamente con la Coordinación de Nivel o la Administración, quienes podrán brindarle una guía personalizada."
-5. REFERENCIAS: Menciona el nombre del documento de forma natural (Ej: "Según lo establecido en nuestra Política de Convivencia...").`;
+    // D. Respuesta (Optimizado con Inteligencia Dialógica)
+    const systemPrompt = `Eres el Asistente Institucional de la Escuela Bilingüe Maquilishuat (EBM). 
+Tu misión es actuar como un Consultor Normativo profesional.
+
+PROTOCOLO DE ENTREVISTA (SÚPER IMPORTANTE):
+1. ANÁLISIS DE VARIABLES: Antes de dar una respuesta final, analiza si la normativa recuperada tiene reglas que varían según el GRADO, NIVEL (Primaria/Secundaria) o EDAD.
+2. LA PREGUNTA LÓGICA: Si la normativa depende del grado y el usuario NO lo ha mencionado en su pregunta ni en el historial, NO des la respuesta completa. En su lugar, saluda amablemente y pide el dato faltante (Ej: "¿Podría indicarme de qué grado es el estudiante? Nuestra normativa varía según el nivel académico").
+3. MEMORIA: Revisa el HISTORIAL DE CONVERSACIÓN para ver si el usuario ya te dio ese dato antes.
+4. TONO: Institucional, amable y empático. NUNCA uses lenguaje técnico como "fragmento", "contexto proporcionado" o "sección".
+5. CIERRE: Si tienes la información completa, responde con seguridad citando el documento de forma natural.
+
+HISTORIAL RECIENTE:
+${chatHistory}`;
     
     const result = await generateResponse(question, [finalContext], systemPrompt);
 
