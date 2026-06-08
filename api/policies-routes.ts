@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { supabaseClient, supabaseAdmin } from '../src/supabase';
-import { createDocument, getDocumentText, logDocumentAccess, getDocumentsByRolePermission, updateDocument, parseDocumentContent } from '../src/document-service';
+import { createDocument, getDocumentText, logDocumentAccess, getDocumentsByRolePermission, updateDocument, parseDocumentContent, deleteDocument } from '../src/document-service';
 import { processUserQuery, rateQueryResponse, getUserQueryHistory, getQueryStatistics, getIARecommendations, getStakeholderInsights, resetSystemStats, markQueryAsProcessed, clearAllSystemData } from '../src/query-service';
 import { Document, AIQuery } from '../src/supabase-types';
 
