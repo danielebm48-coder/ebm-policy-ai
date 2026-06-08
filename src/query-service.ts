@@ -39,16 +39,34 @@ async function identifyTargetDocuments(question: string): Promise<string[]> {
 }
 
 /**
- * CAPA 2: Búsqueda Híbrida Simplificada
+ * CAPA 2: Búsqueda Híbrida Multinivel (Escenarios + Vectores + FTS)
  */
-async function hybridSearch(question: string, limit: number = 20): Promise<ChunkWithSimilarity[]> {
+async function hybridSearch(question: string, roleId: string, limit: number = 20): Promise<ChunkWithSimilarity[]> {
   const db = supabaseAdmin || supabaseClient;
   const cleanQuestion = question.replace(/[^\w\s]/gi, ' ').trim();
   if (!cleanQuestion) return [];
 
   const targetDocIds = await identifyTargetDocuments(question);
+  let embedding: number[] | null = null;
+  try {
+    embedding = await generateEmbedding(question);
+  } catch (e) {
+    console.warn('[HybridSearch] Embedding API offline');
+  }
 
-  // 1. Búsqueda por Texto (FTS)
+  // 1. Búsqueda en Capa de Escenarios Q&A (Prioridad Máxima)
+  let qaResults: any[] = [];
+  if (embedding && embedding.length === 1536) {
+    const { data: qData } = await db.rpc('match_qa_scenarios', {
+      query_embedding: embedding,
+      match_role_id: roleId,
+      match_count: 5,
+      match_threshold: 0.7 // Buscamos alta coincidencia
+    });
+    if (qData) qaResults = qData;
+  }
+
+  // 2. Búsqueda por Texto (FTS)
   let ftsQuery = db.from('document_chunks')
     .select('id, document_id, parent_id, text')
     .textSearch('fts_vector', cleanQuestion, { config: 'spanish', type: 'websearch' })
@@ -57,29 +75,32 @@ async function hybridSearch(question: string, limit: number = 20): Promise<Chunk
   if (targetDocIds.length > 0) {
     ftsQuery = ftsQuery.or(`document_id.in.(${targetDocIds.join(',')})`);
   }
-
   const { data: ftsResults } = await ftsQuery;
 
-  // 2. Búsqueda Vectorial (Conceptual)
+  // 3. Búsqueda Vectorial de Chunks (Conceptual)
   let vectorResults: any[] = [];
-  try {
-    const embedding = await generateEmbedding(question);
-    if (embedding && embedding.length === 1536) {
-      const { data: vData, error: vError } = await db.rpc('match_documents', {
-        query_embedding: embedding,
-        match_count: limit,
-        match_threshold: 0.05
-      });
-      if (!vError && vData) vectorResults = vData;
-    }
-  } catch (e) {
-    console.warn('[HybridSearch] IA conceptually offline or quota exceeded');
+  if (embedding && embedding.length === 1536) {
+    const { data: vData } = await db.rpc('match_documents', {
+      query_embedding: embedding,
+      match_count: limit,
+      match_threshold: 0.1
+    });
+    if (vData) vectorResults = vData;
   }
 
-  // 3. Combinación (RRF - Reciprocal Rank Fusion)
+  // 4. Combinación (RRF mejorado con Capa Q&A)
   const allCandidates = new Map<string, any>();
   
-  // Procesar FTS (Alta prioridad)
+  // Procesar Q&A (Boost x5)
+  qaResults.forEach((c: any, i: number) => {
+    allCandidates.set(`qa_${c.id}`, { 
+      text: `PREGUNTA FRECUENTE: ${c.question}\nRESPUESTA SUGERIDA: ${c.answer}`, 
+      document_id: c.document_id,
+      score: (1.0 / (i + 1)) + 5.0 
+    });
+  });
+
+  // Procesar FTS (Boost x2)
   (ftsResults || []).forEach((c: any, i: number) => {
     allCandidates.set(c.id, { ...c, score: (1.0 / (i + 1)) + 2.0 });
   });
@@ -99,7 +120,7 @@ async function hybridSearch(question: string, limit: number = 20): Promise<Chunk
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map(c => ({
-      id: c.id,
+      id: c.id || 'qa',
       document_id: c.document_id,
       parent_id: c.parent_id,
       text: c.text,
@@ -122,31 +143,33 @@ export async function processUserQuery(
   try {
     await supabaseAdmin.from('ai_queries').insert([{ id: queryId, user_id: userId, user_role: userRole, question, status: 'processing' }]);
 
-    // A. Búsqueda (1 llamada a Embedding si hay cuota)
-    const candidates = await hybridSearch(question, 10);
+    // A. Búsqueda Multinivel (Escenarios + Chunks)
+    const candidates = await hybridSearch(question, userRole, 10);
 
     if (candidates.length === 0) {
-      const fallback = "Lo siento, no he encontrado información en la normativa escolar actual.";
+      const fallback = "La normativa actual define los lineamientos generales sobre este tema; sin embargo, para detalles específicos de implementación o casos excepcionales, le recomendamos validar directamente con la Coordinación de Nivel o la Administración, quienes podrán brindarle una guía personalizada.";
       await supabaseAdmin.from('ai_queries').update({ answer: fallback, status: 'completed' }).eq('id', queryId);
       return { queryId, question, answer: fallback, sourceDocuments: [], tokensUsed: { input: 0, output: 0 } };
     }
 
-    // B. Contexto (Recuperar bloques grandes)
-    const parentIds = [...new Set(candidates.map(c => c.parent_id).filter(id => !!id))];
-    let contextChunks: { text: string; document_id: string }[] = [];
-
+    // B. Contexto (Recuperar bloques grandes, priorizando Q&A)
+    const contextChunks = candidates.map(c => ({ text: c.text, document_id: c.document_id, parent_id: c.parent_id }));
+    const parentIds = [...new Set(contextChunks.map(c => c.parent_id).filter(id => !!id))];
+    
+    let finalContext = "";
     if (parentIds.length > 0) {
       const { data: parents } = await supabaseAdmin.from('document_parents').select('document_id, text').in('id', parentIds);
-      if (parents) contextChunks = parents;
-    } else {
-      contextChunks = candidates.map(c => ({ text: c.text, document_id: c.document_id }));
+      if (parents) {
+        finalContext += parents.map(p => p.text).join('\n\n---\n\n');
+      }
     }
+    
+    // Añadir el texto de los candidatos directamente (especialmente los Q&A)
+    finalContext += "\n\n" + contextChunks.map(c => c.text).join('\n\n---\n\n');
 
     const docIds = [...new Set(contextChunks.map(c => c.document_id))];
     const { data: docInfo } = await supabaseAdmin.from('documents').select('id, name').in('id', docIds);
     const docMap = new Map((docInfo || []).map(d => [d.id, d.name]));
-
-    const contextText = contextChunks.map(c => `[DOC: ${docMap.get(c.document_id) || 'Info'}]\n${c.text}`).join('\n\n---\n\n');
 
     // C. Respuesta (Optimizado con Tono Institucional Maquilishuat)
     const systemPrompt = `Eres el Asistente Institucional de la Escuela Bilingüe Maquilishuat (EBM). 
@@ -159,7 +182,8 @@ REGLAS CRÍTICAS DE COMUNICACIÓN:
 4. MANEJO DE VACÍOS: Si la información específica no está detallada en la normativa consultada, NO digas "no lo sé" o "está incompleto". En su lugar, responde de forma elegante: 
    "La normativa actual define los lineamientos generales sobre este tema; sin embargo, para detalles específicos de implementación o casos excepcionales, le recomendamos validar directamente con la Coordinación de Nivel o la Administración, quienes podrán brindarle una guía personalizada."
 5. REFERENCIAS: Menciona el nombre del documento de forma natural (Ej: "Según lo establecido en nuestra Política de Convivencia...").`;
-    const result = await generateResponse(question, [contextText], systemPrompt);
+    
+    const result = await generateResponse(question, [finalContext], systemPrompt);
 
     // D. Guardar
     const docNames = Array.from(docMap.values());

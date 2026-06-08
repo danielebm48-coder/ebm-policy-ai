@@ -95,6 +95,74 @@ export function splitTextIntoChunks(text: string, chunkSize: number = 600, overl
 
 
 /**
+ * Generar escenarios de Q&A predictivos para diferentes roles
+ */
+export async function generateQAScenarios(
+  text: string,
+  documentId: string,
+  chunkId: string
+): Promise<void> {
+  if (!supabaseAdmin) return;
+
+  const roles = ['padre', 'profesor', 'alumno', 'directivo'];
+  const systemPrompt = `Actúa como un Asesor Legal y de Convivencia de la Escuela Bilingüe Maquilishuat.
+Analiza el siguiente fragmento de normativa y genera exactamente 1 pregunta y 1 respuesta específica para cada uno de los siguientes roles: ${roles.join(', ')}.
+
+REGLAS DE GENERACIÓN:
+1. PREGUNTA: Debe ser una duda real y común que tendría una persona de ese rol (Ej: Padre: "¿Puede mi hijo llevar celular si es de 4to grado?").
+2. RESPUESTA: Debe ser institucional, clara y basada 100% en el texto.
+3. FORMATO: Devuelve SIEMPRE un JSON válido con este esquema:
+{
+  "scenarios": [
+    { "role": "padre", "question": "...", "answer": "..." },
+    { "role": "profesor", "question": "...", "answer": "..." },
+    ...
+  ]
+}
+
+Si el texto no contiene información relevante para un rol, intenta deducir la postura institucional general o la guía a seguir.`;
+
+  try {
+    const response = await generateResponse(
+      "Genera los escenarios Q&A para este fragmento:",
+      [text],
+      systemPrompt
+    );
+
+    // Limpiar el JSON de posibles bloques de código markdown
+    const jsonStr = response.answer.replace(/```json|```/g, '').trim();
+    const data = JSON.parse(jsonStr);
+
+    if (data.scenarios && Array.isArray(data.scenarios)) {
+      const inserts = [];
+      for (const scenario of data.scenarios) {
+        // Generar embedding de la PREGUNTA para búsqueda de intención
+        let embedding = null;
+        try {
+          embedding = await generateEmbedding(scenario.question);
+        } catch (e) {
+          console.warn(`[QA-Gen] Failed to generate embedding for question: ${scenario.question}`);
+        }
+
+        inserts.push({
+          document_id: documentId,
+          chunk_id: chunkId,
+          role_id: scenario.role,
+          question: scenario.question,
+          answer: scenario.answer,
+          embedding: embedding
+        });
+      }
+
+      const { error } = await supabaseAdmin.from('document_qa_scenarios').insert(inserts);
+      if (error) throw error;
+    }
+  } catch (error) {
+    console.error(`[QA-Gen] Error generating scenarios for chunk ${chunkId}:`, error);
+  }
+}
+
+/**
  * Guardar un documento en Supabase Storage
  */
 export async function uploadDocumentFile(
@@ -276,15 +344,28 @@ export async function processDocumentChunks(documentId: string, text: string): P
       }
     }
 
-    // 3. Insertar hijos en lotes con verificación de error
+    // 3. Insertar hijos en lotes con verificación de error e invocar generación de escenarios
     const batchSize = 10;
     for (let i = 0; i < childInserts.length; i += batchSize) {
       const batch = childInserts.slice(i, i + batchSize);
-      const { error: childError } = await supabaseAdmin.from('document_chunks').insert(batch);
+      const { data: insertedChildren, error: childError } = await supabaseAdmin
+        .from('document_chunks')
+        .insert(batch)
+        .select('id, text');
       
       if (childError) {
         console.error('[Ingestion] Error inserting children batch:', childError.message);
         throw new Error(`Failed to insert children batch: ${childError.message}`);
+      }
+
+      // Generar Escenarios Q&A para cada chunk insertado
+      if (insertedChildren) {
+        for (const child of insertedChildren) {
+          // No bloqueamos el proceso principal, pero registramos la intención
+          generateQAScenarios(child.text, documentId, child.id).catch(err => 
+            console.error(`[Ingestion] Async QA Gen failed for ${child.id}:`, err)
+          );
+        }
       }
     }
 
