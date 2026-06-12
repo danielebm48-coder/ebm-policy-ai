@@ -166,6 +166,7 @@ export async function registerUser(userData: {
 
       // 6. Si requiere aprobación, crear registro de solicitud
       if (requiresApproval) {
+        console.log(`[AUTH] Creating pending approval for user ${userId} (${userData.role})`);
         await createPendingApproval(userId, userData.role);
         return { user: newUser, pendingApproval: true };
       }

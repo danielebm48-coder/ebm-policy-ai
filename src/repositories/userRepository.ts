@@ -83,6 +83,17 @@ export async function createPendingApproval(userId: string, role: string): Promi
 }
 
 export async function getPendingApprovals(): Promise<any[]> {
+  // Primero, nos aseguramos de que no haya administradores huérfanos (inactivos sin registro de aprobación)
+  await pool.query(`
+    INSERT INTO pending_approvals (user_id, requested_role, status, requested_at)
+    SELECT id, role, 'pending', created_at
+    FROM users
+    WHERE role = 'admin' 
+      AND active = FALSE
+      AND id NOT IN (SELECT user_id FROM pending_approvals)
+    ON CONFLICT DO NOTHING
+  `);
+
   const result = await pool.query(
     `SELECT pa.*, u.name as user_name, u.email as user_email 
      FROM pending_approvals pa 

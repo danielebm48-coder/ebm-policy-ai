@@ -200,7 +200,7 @@ ${chatHistory}`;
     await supabaseAdmin.from('ai_queries').update({
       answer: result.answer,
       source_documents: docNames,
-      model_used: 'gemini-3.5-flash-stable',
+      model_used: 'gemini-1.5-flash-stable',
       tokens_used: result.tokensUsed,
       status: 'completed',
       completed_at: new Date().toISOString()
