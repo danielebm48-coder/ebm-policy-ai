@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createDocument, supabaseAdmin } from './document-service';
+import { normalizeText } from './utils/encoding';
 const pdf = require('pdf-parse');
 const mammoth = require('mammoth');
 
@@ -63,7 +64,8 @@ async function ingestPolicies() {
           continue;
         }
 
-        const name = file.replace(ext, '').replace(/[-_]/g, ' ').trim();
+        const rawName = file.replace(ext, '').replace(/[-_]/g, ' ').trim();
+        const name = normalizeText(rawName);
         
         // Determinar categoría y tipo básico
         let type: 'policy' | 'manual' | 'procedure' | 'handbook' | 'other' = 'policy';
@@ -82,8 +84,9 @@ async function ingestPolicies() {
 
         console.log(`Ingestando como [${type}] en categoría [${category}]...`);
 
+        const capitalized = name.charAt(0).toUpperCase() + name.slice(1);
         const doc = await createDocument(
-          name.charAt(0).toUpperCase() + name.slice(1),
+          capitalized,
           type,
           category,
           content,

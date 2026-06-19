@@ -2,6 +2,7 @@ import { supabaseClient, supabaseAdmin } from './supabase';
 export { supabaseAdmin };
 import { generateEmbedding, generateResponse } from './gemini';
 import { Document, DocumentChunk } from './supabase-types';
+import { normalizeText } from './utils/encoding';
 const pdf = require('pdf-parse');
 const mammoth = require('mammoth');
 
@@ -201,12 +202,14 @@ export async function createDocument(
     throw new Error('Admin client not configured');
   }
 
+  const normalizedName = normalizeText(name);
+
   const documentId = `doc_${Date.now()}`;
 
   try {
     // 1. Optimizar contenido con IA antes de guardar
-    console.log(`[AI-Optimization] Optimizing document: ${name}`);
-    const optimizedText = await optimizeContentWithIA(text, name);
+    console.log(`[AI-Optimization] Optimizing document: ${normalizedName}`);
+    const optimizedText = await optimizeContentWithIA(text, normalizedName);
 
     // 2. Crear registro de documento con texto original y optimizado
     const { data: documentData, error: docError } = await supabaseAdmin
@@ -214,7 +217,7 @@ export async function createDocument(
       .insert([
         {
           id: documentId,
-          name,
+          name: normalizedName,
           type,
           category,
           description,
@@ -435,6 +438,8 @@ export async function updateDocument(
     throw new Error('Admin client not configured');
   }
 
+  const normalizedName = normalizeText(updates.name);
+
   const { data: existing, error: existingError } = await supabaseAdmin
     .from('documents')
     .select('version')
@@ -448,7 +453,7 @@ export async function updateDocument(
   const { data: document, error: docError } = await supabaseAdmin
     .from('documents')
     .update({
-      name: updates.name,
+      name: normalizedName,
       type: updates.type,
       category: updates.category,
       description: updates.description,

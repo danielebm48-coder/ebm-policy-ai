@@ -1,5 +1,6 @@
 import express from 'express';
 import { supabaseClient, supabaseAdmin } from '../src/supabase';
+import { normalizeText } from '../src/utils/encoding';
 import { Policy, User } from '../src/supabase-types';
 
 const router = express.Router();
@@ -53,7 +54,13 @@ router.post('/policies', async (req, res) => {
       return res.status(500).json({ error: 'Admin client not configured' });
     }
 
-    const policy: Policy = req.body;
+    const incoming: Policy = req.body;
+    const policy: Policy = {
+      ...incoming,
+      title: normalizeText(incoming.title),
+      summary: normalizeText((incoming as any).summary || ''),
+      content: normalizeText((incoming as any).content || ''),
+    };
 
     const { data, error } = await supabaseAdmin
       .from('policies')
@@ -75,9 +82,17 @@ router.post('/policies', async (req, res) => {
  */
 router.put('/policies/:id', async (req, res) => {
   try {
+    const incoming = req.body;
+    const updates = {
+      ...incoming,
+      title: normalizeText((incoming as any).title || ''),
+      summary: normalizeText((incoming as any).summary || ''),
+      content: normalizeText((incoming as any).content || ''),
+    };
+
     const { data, error } = await supabaseClient
       .from('policies')
-      .update(req.body)
+      .update(updates)
       .eq('id', req.params.id)
       .select();
 

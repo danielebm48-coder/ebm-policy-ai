@@ -167,7 +167,12 @@ export async function processUserQuery(
 
     if (candidates.length === 0) {
       const fallback = "La normativa actual define los lineamientos generales sobre este tema; sin embargo, para detalles específicos de implementación o casos excepcionales, le recomendamos validar directamente con la Coordinación de Nivel o la Administración, quienes podrán brindarle una guía personalizada.";
-      await supabaseAdmin.from('ai_queries').update({ answer: fallback, status: 'completed' }).eq('id', queryId);
+      await supabaseAdmin.from('ai_queries').update({
+        answer: fallback,
+        status: 'completed',
+        error_message: 'NO_DOCUMENT_MATCH',
+        completed_at: new Date().toISOString()
+      }).eq('id', queryId);
       return { queryId, question, answer: fallback, sourceDocuments: [], tokensUsed: { input: 0, output: 0 } };
     }
 
@@ -310,17 +315,55 @@ export async function getQueryStatistics(startDate?: string, endDate?: string) {
 
 export async function getStakeholderInsights(): Promise<any> {
   if (!supabaseAdmin) return { message: 'No configurado' };
-  const { data: queries } = await supabaseAdmin.from('ai_queries').select('user_role, question').limit(20);
-  if (!queries || queries.length < 5) return { strategicAnalysis: 'Datos insuficientes para análisis.' };
-  const prompt = `Analiza estas preguntas: ${queries.map(q => q.question).join(', ')}`;
-  const res = await generateResponse(prompt, [], "Analista escolar.");
-  return { strategicAnalysis: res.answer };
+  {
+    const { data: queries } = await supabaseAdmin
+      .from('ai_queries')
+      .select('user_role, question, helpful_rating, requested_at')
+      .order('requested_at', { ascending: false })
+      .limit(100);
+
+    const roleGroups = new Map<string, { role: string; count: number; ratingSum: number; ratingCount: number }>();
+    for (const query of queries || []) {
+      const role = query.user_role || 'sin_rol';
+      const current = roleGroups.get(role) || { role, count: 0, ratingSum: 0, ratingCount: 0 };
+      current.count += 1;
+      if (query.helpful_rating) {
+        current.ratingSum += query.helpful_rating;
+        current.ratingCount += 1;
+      }
+      roleGroups.set(role, current);
+    }
+
+    const roleStats = Array.from(roleGroups.values()).map((group) => ({
+      role: group.role,
+      count: group.count,
+      avgRating: group.ratingCount > 0 ? group.ratingSum / group.ratingCount : 0,
+    }));
+
+    if (!queries || queries.length < 5) {
+      return { roleStats, strategicAnalysis: 'Datos insuficientes para analisis.' };
+    }
+
+    const recentQuestions = queries.slice(0, 20).map(q => q.question).join(', ');
+    const prompt = `Analiza estas preguntas por grupos de interes: ${recentQuestions}`;
+    const res = await generateResponse(prompt, [], "Analista escolar.");
+    return { roleStats, strategicAnalysis: res.answer };
+  }
 }
 
 export async function getIARecommendations(): Promise<any> {
   if (!supabaseAdmin) return { recommendations: 'No hay suficientes datos.' };
-  const { data } = await supabaseAdmin.from('ai_queries').select('question').eq('error_message', 'NO_DOCUMENT_MATCH').limit(10);
-  if (!data || data.length < 3) return { recommendations: 'Continúa alimentando el repositorio.' };
-  const res = await generateResponse(`Sugiere temas para: ${data.map(q => q.question).join(', ')}`, [], "Experto en políticas.");
-  return { recommendations: res.answer };
+  {
+    const { data } = await supabaseAdmin
+      .from('ai_queries')
+      .select('question')
+      .eq('error_message', 'NO_DOCUMENT_MATCH')
+      .or('is_processed.is.false,is_processed.is.null')
+      .order('requested_at', { ascending: false })
+      .limit(10);
+
+    if (!data || data.length < 3) return { recommendations: 'Continua alimentando el repositorio.' };
+    const res = await generateResponse(`Sugiere temas para: ${data.map(q => q.question).join(', ')}`, [], "Experto en politicas.");
+    return { recommendations: res.answer };
+  }
 }

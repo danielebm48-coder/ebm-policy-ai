@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { supabaseClient, supabaseAdmin } from '../src/supabase';
 import { createDocument, getDocumentText, logDocumentAccess, getDocumentsByRolePermission, updateDocument, parseDocumentContent, deleteDocument } from '../src/document-service';
+import { normalizeText } from '../src/utils/encoding';
 import { processUserQuery, rateQueryResponse, getUserQueryHistory, getQueryStatistics, getIARecommendations, getStakeholderInsights, resetSystemStats, markQueryAsProcessed, clearAllSystemData } from '../src/query-service';
 import { Document, AIQuery } from '../src/supabase-types';
 
@@ -42,6 +43,10 @@ const roleNames: Record<string, string> = {
   alumno: 'Estudiante',
   padre: 'Padre/Apoderado',
 };
+
+function normalizeUploadedFileName(fileName: string): string {
+  return normalizeText(fileName);
+}
 
 const fallbackNames: Record<string, string> = {
   admin: 'Sistema',
@@ -324,7 +329,9 @@ router.get('/documents/:documentId/download', requireAuth, async (req: AuthReque
     }
 
     const text = await getDocumentText(documentId);
-    const safeName = String(document.name || documentId).replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '');
+    const safeName = String(document.name || documentId)
+      .replace(/[^a-z0-9ñÑáéíóúÁÉÍÓÚüÜ_-]+/gi, '-')
+      .replace(/^-|-$/g, '');
 
     await logDocumentAccess(documentId, user.id, 'view', 'Document downloaded', req.ip);
 
@@ -465,6 +472,7 @@ router.get('/admin/unanswered', requireAuth, async (req: AuthRequest, res: Respo
       .from('ai_queries')
       .select('id, user_id, user_role, question, requested_at, completed_at, status')
       .eq('error_message', 'NO_DOCUMENT_MATCH')
+      .or('is_processed.is.false,is_processed.is.null')
       .order('requested_at', { ascending: false })
       .limit(limit);
 
@@ -650,7 +658,8 @@ router.post('/documents/upload', requireAuth, upload.single('file'), async (req:
     }
 
     const text = await parseDocumentContent(file.buffer, file.mimetype);
-    const name = file.originalname.replace(/\.[^/.]+$/, "").replace(/[-_]/g, ' ');
+    const originalName = normalizeUploadedFileName(file.originalname);
+    const name = originalName.replace(/\.[^/.]+$/, "").replace(/[-_]/g, ' ');
 
     const document = await createDocument(name, type, category, text, user.id, description);
 

@@ -293,6 +293,7 @@ const AdminPanel: React.FC = () => {
       if (response.ok) {
         await loadUnansweredQueries();
         await loadStatistics();
+        await loadRecommendations();
       }
     } catch (e) {
       console.error('Error processing query:', e);
@@ -313,6 +314,29 @@ const AdminPanel: React.FC = () => {
     } finally {
       setIsLoadingApprovals(false);
     }
+  };
+
+  const refreshUnansweredData = async () => {
+    await Promise.all([
+      loadUnansweredQueries(),
+      loadStatistics(),
+    ]);
+  };
+
+  const activatePendingSuggestions = async () => {
+    setSuggestionsTab('pending');
+    await Promise.all([
+      loadUnansweredQueries(),
+      loadStatistics(),
+      loadRecommendations(),
+    ]);
+  };
+
+  const refreshStakeholderInsights = async () => {
+    await Promise.all([
+      loadInsights(),
+      loadStatistics(),
+    ]);
   };
 
   const handleApprove = async (approvalId: string) => {
@@ -979,7 +1003,7 @@ const AdminPanel: React.FC = () => {
               <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Sugerencias de la IA para Documentacion</h2>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button 
-                  onClick={() => setSuggestionsTab('pending')}
+                  onClick={activatePendingSuggestions}
                   style={{ backgroundColor: suggestionsTab === 'pending' ? 'var(--primary-blue)' : 'var(--white)', color: suggestionsTab === 'pending' ? 'white' : 'var(--primary-blue)', border: '1px solid var(--primary-blue)', padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-md)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
                 >
                   Pendientes
@@ -1045,7 +1069,7 @@ const AdminPanel: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Analisis de Grupos de Interes (Direccion)</h2>
               <button 
-                onClick={loadInsights}
+                onClick={refreshStakeholderInsights}
                 style={{ backgroundColor: 'var(--nickel-light)', border: 'none', padding: '0.4rem 0.8rem', borderRadius: 'var(--radius-md)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
               >
                 Actualizar
@@ -1112,7 +1136,7 @@ const AdminPanel: React.FC = () => {
               <h2 style={{ fontSize: '1.1rem', margin: 0 }}>Sin respuesta IA</h2>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button
-                  onClick={loadUnansweredQueries}
+                  onClick={refreshUnansweredData}
                   style={{ backgroundColor: 'var(--white)', color: 'var(--primary-blue)', border: '1px solid var(--primary-blue)', padding: '0.4rem 0.65rem', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer' }}
                 >
                   Refrescar

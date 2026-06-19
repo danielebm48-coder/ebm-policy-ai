@@ -1,5 +1,6 @@
 import { pool } from '../db';
 import { PolicyDocument, PolicyVersion, PolicyCategory, PolicyStatus } from '../models';
+import { normalizeText } from '../utils/encoding';
 
 function mapPolicyRow(row: any): PolicyDocument {
   return {
@@ -39,16 +40,24 @@ export async function createPolicy(policy: Omit<PolicyDocument, 'id' | 'createdA
   const id = `policy_${Math.random().toString(36).substring(2, 10)}`;
   const version = 1;
 
+  const title = normalizeText(policy.title);
+  const summary = normalizeText(policy.summary || '');
+  const content = normalizeText(policy.content || '');
+
   await pool.query(
     `INSERT INTO policies (id, title, summary, category, status, effective_date, version, tags, content, created_by, updated_by, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-    [id, policy.title, policy.summary, policy.category, policy.status, policy.effectiveDate, version, JSON.stringify(policy.tags), policy.content, policy.createdBy, policy.updatedBy, now, now],
+    [id, title, summary, policy.category, policy.status, policy.effectiveDate, version, JSON.stringify(policy.tags), content, policy.createdBy, policy.updatedBy, now, now],
   );
+
+  const versionTitle = normalizeText(policy.title);
+  const versionSummary = normalizeText(policy.summary || '');
+  const versionContent = normalizeText(policy.content || '');
 
   await pool.query(
     `INSERT INTO policy_versions (version_id, policy_id, title, summary, status, effective_date, version, tags, content, created_by, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-    [`version_${Math.random().toString(36).substring(2, 10)}`, id, policy.title, policy.summary, policy.status, policy.effectiveDate, version, JSON.stringify(policy.tags), policy.content, policy.createdBy, now],
+    [`version_${Math.random().toString(36).substring(2, 10)}`, id, versionTitle, versionSummary, policy.status, policy.effectiveDate, version, JSON.stringify(policy.tags), versionContent, policy.createdBy, now],
   );
 
   const created = await getPolicyById(id);
@@ -72,24 +81,28 @@ export async function updatePolicy(policyId: string, updates: Partial<Omit<Polic
   await pool.query(
     `UPDATE policies SET title = $1, summary = $2, category = $3, status = $4, effective_date = $5, version = $6, tags = $7, content = $8, updated_by = $9, updated_at = $10 WHERE id = $11`,
     [
-      updated.title,
-      updated.summary,
+      normalizeText(updated.title),
+      normalizeText(updated.summary || ''),
       updated.category,
       updated.status,
       updated.effectiveDate,
       updated.version,
       JSON.stringify(updated.tags),
-      updated.content,
+      normalizeText(updated.content || ''),
       updated.updatedBy,
       updated.updatedAt,
       policyId,
     ],
   );
 
+  const verTitle = normalizeText(updated.title);
+  const verSummary = normalizeText(updated.summary || '');
+  const verContent = normalizeText(updated.content || '');
+
   await pool.query(
     `INSERT INTO policy_versions (version_id, policy_id, title, summary, status, effective_date, version, tags, content, created_by, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-    [`version_${Math.random().toString(36).substring(2, 10)}`, policyId, updated.title, updated.summary, updated.status, updated.effectiveDate, updated.version, JSON.stringify(updated.tags), updated.content, updated.updatedBy, updated.updatedAt],
+    [`version_${Math.random().toString(36).substring(2, 10)}`, policyId, verTitle, verSummary, updated.status, updated.effectiveDate, updated.version, JSON.stringify(updated.tags), verContent, updated.updatedBy, updated.updatedAt],
   );
 
   return getPolicyById(policyId);
