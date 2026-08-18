@@ -63,7 +63,7 @@ const Layout: React.FC<LayoutProps> = ({ children, role, title }) => {
         </div>
       </nav>
       
-      <main style={{ flex: 1, padding: '2rem', maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
+      <main className="container" style={{ flex: 1, padding: '2rem 0' }}>
         {title && <h1 style={{ marginBottom: '2rem', borderBottom: '2px solid var(--nickel-light)', paddingBottom: '0.5rem' }}>{title}</h1>}
         {children}
       </main>

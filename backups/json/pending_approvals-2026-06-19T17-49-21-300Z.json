@@ -1,0 +1,56 @@
+[
+  {
+    "id": "0cc5de64-39ed-460b-a5e6-6089700d864a",
+    "user_id": "u_67ugmzuv",
+    "requested_role": "admin",
+    "status": "approved",
+    "requested_at": "2026-06-04T19:34:02.669Z",
+    "processed_at": "2026-06-04T20:49:44.458Z",
+    "processed_by": "u_dguzman_admin"
+  },
+  {
+    "id": "af25027f-53e2-4cfd-bc35-ff0ecd00fd7c",
+    "user_id": "u_gb3yo066",
+    "requested_role": "admin",
+    "status": "approved",
+    "requested_at": "2026-06-04T19:32:51.213Z",
+    "processed_at": "2026-06-04T20:49:46.397Z",
+    "processed_by": "u_dguzman_admin"
+  },
+  {
+    "id": "621b6e74-153a-4657-82f7-b43f1571fb6a",
+    "user_id": "u_fxypnl40",
+    "requested_role": "admin",
+    "status": "approved",
+    "requested_at": "2026-06-04T19:31:46.466Z",
+    "processed_at": "2026-06-04T20:49:47.794Z",
+    "processed_by": "u_dguzman_admin"
+  },
+  {
+    "id": "18411989-28a0-4587-968f-331262c03392",
+    "user_id": "u_qstdruri",
+    "requested_role": "admin",
+    "status": "approved",
+    "requested_at": "2026-06-04T15:13:02.322Z",
+    "processed_at": "2026-06-04T20:49:49.402Z",
+    "processed_by": "u_dguzman_admin"
+  },
+  {
+    "id": "d4881d8a-ee0a-462a-9fde-6ea2725b3db4",
+    "user_id": "u_95oad7oz",
+    "requested_role": "admin",
+    "status": "approved",
+    "requested_at": "2026-06-01T19:39:58.045Z",
+    "processed_at": "2026-06-04T20:49:51.008Z",
+    "processed_by": "u_dguzman_admin"
+  },
+  {
+    "id": "a187056f-2bd5-42fe-83ba-178a56cb137a",
+    "user_id": "u_nglr6o5s",
+    "requested_role": "admin",
+    "status": "approved",
+    "requested_at": "2026-06-12T15:24:02.360Z",
+    "processed_at": "2026-06-12T15:36:32.314Z",
+    "processed_by": "u_dguzman_admin"
+  }
+]

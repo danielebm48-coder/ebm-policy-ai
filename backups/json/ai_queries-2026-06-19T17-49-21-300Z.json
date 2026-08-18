@@ -1,0 +1,184 @@
+[
+  {
+    "id": "query_1781880498372",
+    "user_id": "u_alumno",
+    "user_role": "alumno",
+    "question": "¿Qué dice el manual sobre la puntualidad?",
+    "answer": "Estimado miembro de nuestra comunidad:\n\nLe saludo cordialmente, esperando que se encuentre muy bien.\n\nEn relación con su consulta sobre la puntualidad, nuestro documento sobre el **Enfoque de Calidad en Actividades Deportivas Extracurriculares (ASA)** establece que este es un valor fundamental que debe ser modelado de manera ejemplar por nuestro equipo de entrenadores y coordinadores, junto con el respeto y el trabajo en equipo, para ser referentes positivos ante los estudiantes.\n\nPor otra parte, si su pregunta se refiere a las normas de puntualidad, asistencia y horarios de llegada para las clases regulares de la jornada académica, ¿podría indicarme de qué grado o nivel es el estudiante? Nuestra normativa de convivencia escolar varía según el nivel académico del alumno, y con ese detalle podré brindarle la información exacta que necesita.\n\nQuedo a su completa disposición para apoyarle.",
+    "source_documents": [
+      "PolÃ­tica de Uso de Celulares y Dispositivos ElectrÃ³nicos",
+      "Enfoque de Calidad en Actividades ASA"
+    ],
+    "source_chunks": null,
+    "model_used": "gemini-3.5-flash-stable",
+    "tokens_used": {
+      "input": 1349,
+      "output": 183
+    },
+    "helpful_rating": null,
+    "feedback": null,
+    "status": "completed",
+    "error_message": null,
+    "requested_at": "2026-06-19T14:48:18.953Z",
+    "completed_at": "2026-06-19T14:48:39.013Z",
+    "is_processed": false,
+    "processed_at": null,
+    "processed_by": null
+  },
+  {
+    "id": "query_1781881013688",
+    "user_id": "u_alumno",
+    "user_role": "alumno",
+    "question": "¿Qué dice el manual sobre la puntualidad?",
+    "answer": "Estimado miembro de nuestra comunidad de la Escuela Bilingüe Maquilishuat (EBM):\n\nLe saludo con mucho respeto y empatía, esperando que se encuentre muy bien.\n\nPara poder brindarle la información precisa y detallada sobre las normas de puntualidad, asistencia y horarios de la jornada académica, ¿podría indicarme por favor el grado o nivel educativo (Primaria o Secundaria",
+    "source_documents": [
+      "PolÃ­tica de Uso de Celulares y Dispositivos ElectrÃ³nicos",
+      "Enfoque de Calidad en Actividades ASA"
+    ],
+    "source_chunks": null,
+    "model_used": "gemini-3.5-flash-stable",
+    "tokens_used": {
+      "input": 1550,
+      "output": 80
+    },
+    "helpful_rating": null,
+    "feedback": null,
+    "status": "completed",
+    "error_message": null,
+    "requested_at": "2026-06-19T14:56:53.788Z",
+    "completed_at": "2026-06-19T14:57:05.580Z",
+    "is_processed": false,
+    "processed_at": null,
+    "processed_by": null
+  },
+  {
+    "id": "query_1781881053413",
+    "user_id": "u_alumno",
+    "user_role": "alumno",
+    "question": "¿Qué dice el manual sobre la puntualidad?",
+    "answer": "Estimado miembro de nuestra comunidad de la Escuela Bilingüe Maquilishuat (EBM):\n\nLe saludo con el respeto y la cordialidad que nos caracteriza, esperando que se encuentre muy bien.\n\nCon respecto a su consulta sobre las normas de puntualidad, le comento que los lineamientos de asistencia, horarios de entrada y consecuencias por llegadas tardías varían según el nivel académico del estudiante. \n\nPor esta razón, para poder brindarle la información exacta y detallada que corresponde, ¿sería tan amable de indicarme el grado o nivel educativo (Primaria o Secundaria) en el que se encuentra el alumno? \n\nComo un detalle general, le comparto que en nuestro programa de **Actividades Deportivas Extracurriculares (ASA)** se establece que son los entrenadores y coordinadores quienes deben modelar de manera ejemplar el valor de la puntualidad. No obstante, para conocer las reglas aplicables a los estudiantes en su jornada académica diaria, quedo atento al grado del alumno para guiarle correctamente.\n\n¡Estoy a su entera disposición para apoyarle en lo que necesite!",
+    "source_documents": [
+      "PolÃ­tica de Uso de Celulares y Dispositivos ElectrÃ³nicos",
+      "Enfoque de Calidad en Actividades ASA"
+    ],
+    "source_chunks": null,
+    "model_used": "gemini-3.5-flash-stable",
+    "tokens_used": {
+      "input": 1648,
+      "output": 229
+    },
+    "helpful_rating": null,
+    "feedback": null,
+    "status": "completed",
+    "error_message": null,
+    "requested_at": "2026-06-19T14:57:33.491Z",
+    "completed_at": "2026-06-19T14:57:57.833Z",
+    "is_processed": false,
+    "processed_at": null,
+    "processed_by": null
+  },
+  {
+    "id": "query_1781884590204",
+    "user_id": "u_dguzman_admin",
+    "user_role": "directivo",
+    "question": "Quiero saber sobre la política de uso de celulares, mi hijo de cuarto grado lo debe llevar ",
+    "answer": "Estimado/a padre de familia,\n\nLe saludo cordialmente y le agradezco por especificar que su hijo se encuentra en cuarto grado. Contar con este dato es fundamental, ya que nuestras normativas y reglamentos internos están diseñados para adaptarse a las necesidades y etapas de cada nivel académico.\n\nActualmente, en nuestro registro de la **Política de Uso de Celulares y Dispositivos Electrónicos de la Escuela B",
+    "source_documents": [
+      "PolÃ­tica de Uso de Celulares y Dispositivos ElectrÃ³nicos",
+      "Enfoque de Calidad en Actividades ASA"
+    ],
+    "source_chunks": null,
+    "model_used": "gemini-3.5-flash-stable",
+    "tokens_used": {
+      "input": 1359,
+      "output": 87
+    },
+    "helpful_rating": null,
+    "feedback": null,
+    "status": "completed",
+    "error_message": null,
+    "requested_at": "2026-06-19T15:56:30.281Z",
+    "completed_at": "2026-06-19T15:56:50.321Z",
+    "is_processed": false,
+    "processed_at": null,
+    "processed_by": null
+  },
+  {
+    "id": "query_1781884927540",
+    "user_id": "u_dguzman_admin",
+    "user_role": "admin",
+    "question": "quiero saber si mi hijo de 4to grado puede llevar su celular a la escuela? ",
+    "answer": "Ver la regla exacta para el nivel de primaria.\n\n                Para garantizar que reciba la información correcta y evitar cualquier inconveniente con el ingreso del dispositivo de su hijo, me pondré en contacto inmediato con la Dirección Académica para confirmar el protocolo vigente para cuarto grado. Si lo desea, puede proporcionarme un medio de contacto o bien, le invito a consultar directamente con la secretaría del nivel de primaria para",
+    "source_documents": [
+      "PolÃ­tica de Uso de Celulares y Dispositivos ElectrÃ³nicos",
+      "Enfoque de Calidad en Actividades ASA"
+    ],
+    "source_chunks": null,
+    "model_used": "gemini-3.5-flash-stable",
+    "tokens_used": {
+      "input": 1473,
+      "output": 82
+    },
+    "helpful_rating": null,
+    "feedback": null,
+    "status": "completed",
+    "error_message": null,
+    "requested_at": "2026-06-19T16:02:07.573Z",
+    "completed_at": "2026-06-19T16:02:19.861Z",
+    "is_processed": false,
+    "processed_at": null,
+    "processed_by": null
+  },
+  {
+    "id": "query_1781885408934",
+    "user_id": "u_dguzman_admin",
+    "user_role": "admin",
+    "question": "Que tipo de extracurriculares puede hacer mi hijo que está en cuarto grado ",
+    "answer": "Estimado/a padre de familia,\n\nLe saludo cordialmente y agradezco que nos especifique que su hijo se encuentra en cuarto grado de primaria. \n\nEn la Escuela Bilingüe Maquilishuat (EBM), nuestras actividades extracurriculares se organizan bajo el programa de **Actividades Deportivas Extracurriculares (Actividades ASA)**. De acuerdo con nuestro lineamiento de *Enfoque de Calidad en Actividades ASA*, este programa tiene como objetivo garantizar un desarrollo deportivo de alto estándar, seguro y formativo.\n\nPara un estudiante de cuarto grado, el programa ofrece una experiencia adaptada bajo los siguientes pilares:\n\n*   **Personalización por niveles:** Las cargas de trabajo y los entrenamientos se adaptan específicamente al nivel de habilidad de su hijo, ya sea **principiante, intermedio o avanzado**, garantizando un entorno donde se sienta cómodo y motivado.\n*   **Desarrollo integral y valores:** Más allá de la práctica física, las actividades están diseñadas para fomentar la disciplina, el trabajo en equipo, la gestión de la inteligencia emocional y la inclusión, todo bajo la supervisión de entrenadores debidamente capacitados en primeros auxilios y técnicas de motivación.\n\nDebido a que la disponibilidad de disciplinas deportivas específicas (como fútbol, baloncesto u otras disciplinas) se planifica y actualiza en cada ciclo para garantizar la idoneidad de los horarios y el uso óptimo de los espacios físicos, le sugerimos ponerse en contacto con la Coordinación del Programa ASA o con la secretaría del nivel de Primaria. Ellos le proporcionarán con mucho gusto el catálogo vigente de deportes disponibles para el grado de su hijo en este periodo.\n\nEstamos a su disposición para acompañarle en este proceso y asegurar la mejor experiencia para su hijo.",
+    "source_documents": [
+      "PolÃ­tica de Uso de Celulares y Dispositivos ElectrÃ³nicos",
+      "Enfoque de Calidad en Actividades ASA"
+    ],
+    "source_chunks": null,
+    "model_used": "gemini-3.5-flash-stable",
+    "tokens_used": {
+      "input": 1579,
+      "output": 366
+    },
+    "helpful_rating": null,
+    "feedback": null,
+    "status": "completed",
+    "error_message": null,
+    "requested_at": "2026-06-19T16:10:08.964Z",
+    "completed_at": "2026-06-19T16:10:43.552Z",
+    "is_processed": false,
+    "processed_at": null,
+    "processed_by": null
+  },
+  {
+    "id": "query_1781888943353",
+    "user_id": "u_dguzman_admin",
+    "user_role": "admin",
+    "question": "Quiero saber sobre los celulares. A mi hijo se lo decomisaron, cómo puedo hacer? El va a quinto grado de primaria ",
+    "answer": "Estimado/a padre de familia:\n\nLe saludo cordialmente. Lamento la situación que nos comenta respecto al inconveniente con el dispositivo de su hijo de quinto grado de primaria. \n\nEn la Escuela Bilingüe Maquilishuat (EBM), contamos con la **Política de Uso de Celulares y Dispositivos Electrónicos**, la cual tiene como objetivo regular el uso de estos equipos para garantizar un entorno de aprendizaje seguro, enfocado y libre de distracciones para todos los estudiantes.\n\nCuando se realiza la retención de un dispositivo móvil por no cumplir con los lineamientos de dicha normativa, el protocolo de nuestra institución establece que el aparato debe ser entregado directamente a los padres de familia o encargados legales, y no al estudiante. \n\nPara que pueda recuperar el celular de su hijo a la brevedad, le sugerimos ponerse en contacto o acercarse directamente a la **Secretaría de Primaria** o a la **Dirección Académica** del nivel. Ellos le atenderán con total amabilidad, le explicarán el proceso de entrega y le devolverán el dispositivo de acuerdo con los pasos estipulados en nuestro reglamento de convivencia.\n\nEstamos a su entera disposición para guiarle en este proceso y asegurar que se resuelva de la manera más ágil posible.\n\nAtentamente,\n\n**Asistente Institucional**  \nEscuela Bilingüe Maquilishuat (EBM)",
+    "source_documents": [
+      "PolÃ­tica de Uso de Celulares y Dispositivos ElectrÃ³nicos",
+      "Enfoque de Calidad en Actividades ASA"
+    ],
+    "source_chunks": null,
+    "model_used": "gemini-3.5-flash-stable",
+    "tokens_used": {
+      "input": 1867,
+      "output": 292
+    },
+    "helpful_rating": null,
+    "feedback": null,
+    "status": "completed",
+    "error_message": null,
+    "requested_at": "2026-06-19T17:09:03.413Z",
+    "completed_at": "2026-06-19T17:09:20.083Z",
+    "is_processed": false,
+    "processed_at": null,
+    "processed_by": null
+  }
+]

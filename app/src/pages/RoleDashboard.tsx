@@ -52,9 +52,7 @@ const RoleDashboard: React.FC = () => {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'x-user-id': currentProfile.userId,
-          'x-user-role': normalizedRole,
-          'x-user-email': currentProfile.email
+          'Authorization': `Bearer ${auth?.token || ''}`
         },
         body: JSON.stringify({ rating })
       });
@@ -102,9 +100,7 @@ const RoleDashboard: React.FC = () => {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'x-user-id': currentProfile.userId,
-          'x-user-role': normalizedRole,
-          'x-user-email': currentProfile.email
+          'Authorization': `Bearer ${auth?.token || ''}`
         },
         body: JSON.stringify({
           question: currentQuery

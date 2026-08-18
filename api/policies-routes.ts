@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
+import { verifyToken } from '../src/services/authService';
 import { supabaseClient, supabaseAdmin } from '../src/supabase';
 import { createDocument, getDocumentText, logDocumentAccess, getDocumentsByRolePermission, updateDocument, parseDocumentContent, deleteDocument } from '../src/document-service';
 import { normalizeText } from '../src/utils/encoding';
@@ -19,18 +20,22 @@ interface AuthRequest extends Request {
 }
 
 const requireAuth = (req: AuthRequest, res: Response, next: NextFunction) => {
-  // TODO: Implementar autenticación real con JWT/Supabase Auth
-  const userId = req.headers['x-user-id'] as string;
-  const userRole = req.headers['x-user-role'] as string;
-
-  if (!userId || !userRole) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'User authentication required' });
   }
 
+  const token = authHeader.substring(7);
+  const payload = verifyToken(token);
+
+  if (!payload) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
   req.user = {
-    id: userId,
-    role: userRole,
-    email: req.headers['x-user-email'] as string || '',
+    id: payload.userId,
+    role: payload.role,
+    email: payload.email,
   };
 
   next();

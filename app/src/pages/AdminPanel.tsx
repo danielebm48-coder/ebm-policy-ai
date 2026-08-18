@@ -131,10 +131,8 @@ const AdminPanel: React.FC = () => {
   });
 
   const authHeaders = useMemo(() => ({
-    'x-user-id': auth?.user?.id || '',
-    'x-user-role': role || '',
-    'x-user-email': auth?.user?.email || '',
-  }), [auth?.user?.email, auth?.user?.id, role]);
+    'Authorization': `Bearer ${auth?.token || ''}`,
+  }), [auth?.token]);
 
   useEffect(() => {
     if (!auth?.token || !auth?.user) {

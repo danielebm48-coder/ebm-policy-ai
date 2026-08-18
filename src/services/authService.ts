@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { 
   getUserByEmail, 
   ensureSampleUsers, 
@@ -200,16 +201,40 @@ export async function rejectAdmin(approvalId: string, directorId: string): Promi
   // El usuario permanece inactivo
 }
 
-export function createToken(userId: string, role: UserRole): string {
-  return Buffer.from(`${userId}:${role}:${new Date().getTime()}`).toString('base64');
+export function createToken(userId: string, role: UserRole, email: string): string {
+  const jwtSecret = process.env.JWT_SECRET || 'ebm_default_secret_for_local_dev_2026_!';
+  const payload = JSON.stringify({ userId, role, email, timestamp: new Date().getTime() });
+  const base64Payload = Buffer.from(payload).toString('base64');
+  
+  const signature = crypto
+    .createHmac('sha256', jwtSecret)
+    .update(base64Payload)
+    .digest('base64');
+    
+  return `${base64Payload}.${signature}`;
 }
 
-export function verifyToken(token: string): { userId: string; role: UserRole } | null {
+export function verifyToken(token: string): { userId: string; role: UserRole; email: string } | null {
   try {
-    const decoded = Buffer.from(token, 'base64').toString('utf8');
-    const [userId, role] = decoded.split(':');
-    if (!userId || !role) return null;
-    return { userId, role: role as UserRole };
+    const jwtSecret = process.env.JWT_SECRET || 'ebm_default_secret_for_local_dev_2026_!';
+    const [base64Payload, signature] = token.split('.');
+    if (!base64Payload || !signature) return null;
+    
+    const expectedSignature = crypto
+      .createHmac('sha256', jwtSecret)
+      .update(base64Payload)
+      .digest('base64');
+      
+    if (signature !== expectedSignature) {
+      return null;
+    }
+    
+    const payload = JSON.parse(Buffer.from(base64Payload, 'base64').toString('utf8'));
+    return {
+      userId: payload.userId,
+      role: payload.role as UserRole,
+      email: payload.email || '',
+    };
   } catch {
     return null;
   }

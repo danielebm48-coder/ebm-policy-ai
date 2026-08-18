@@ -184,7 +184,86 @@ export async function processUserQuery(
 
     const finalContext = contextChunks.map(c => `[DOC: ${docMap.get(c.document_id) || 'Info'}]\n${c.text}`).join('\n\n---\n\n');
 
-    // D. Respuesta (Optimizado con Inteligencia Dialógica)
+    // D1. Clasificación de variables (Protocolo de Entrevista Dinámica)
+    let clarifyText: string | null = null;
+    let extractedGrade: string | null = null;
+
+    // Solo aplicamos para roles de comunidad (padre, alumno, profesor)
+    if (userRole !== 'admin' && userRole !== 'directivo') {
+      try {
+        const classificationPrompt = `Eres un Clasificador de Contexto y Variables para un sistema de información escolar.
+Analiza los fragmentos de normativas recuperados, la pregunta del usuario y el historial de la conversación.
+
+Fragmentos de normativas:
+---
+${finalContext}
+---
+
+Historial de conversación:
+${chatHistory}
+
+Pregunta actual del usuario:
+${question}
+
+Tu tarea es responder EXCLUSIVAMENTE con un objeto JSON (sin formato markdown adicional ni explicaciones) con la siguiente estructura:
+{
+  "dependsOnGradeOrLevel": boolean,
+  "hasUserProvidedGradeOrLevel": boolean,
+  "extractedGradeOrLevel": string | null,
+  "clarifyingQuestion": string | null
+}
+
+REGLAS DE CLASIFICACIÓN:
+1. "dependsOnGradeOrLevel": true si el contenido de las normativas indica explícitamente reglas distintas para diferentes grados (ej. 1ero, 4to, 7mo) o niveles escolares (Primaria, Secundaria, Bachillerato). De lo contrario, false.
+2. "hasUserProvidedGradeOrLevel": true si el usuario ha indicado el grado o nivel académico en su pregunta actual o en el historial. De lo contrario, false.
+3. "extractedGradeOrLevel": si el usuario proporcionó el grado/nivel, extrae el texto normalizado (ej. "7mo grado", "Secundaria"). Si no lo proporcionó, null.
+4. "clarifyingQuestion": si "dependsOnGradeOrLevel" es true y "hasUserProvidedGradeOrLevel" es false, escribe una pregunta corta, institucional y amable preguntando el grado o nivel escolar del estudiante (ej. "¿Podría indicarme el grado o nivel académico del estudiante para brindarle la información correcta? Nuestra normativa varía según el nivel."). Si no aplica, null.`;
+
+        const classificationResult = await generateResponse(
+          "Clasifica esta consulta.",
+          [finalContext],
+          classificationPrompt
+        );
+        
+        const jsonStr = classificationResult.answer.replace(/```json|```/g, '').trim();
+        const classification = JSON.parse(jsonStr);
+
+        if (classification.dependsOnGradeOrLevel) {
+          if (!classification.hasUserProvidedGradeOrLevel) {
+            clarifyText = classification.clarifyingQuestion || "¿Podría indicarme el grado o nivel académico del estudiante?";
+          } else {
+            extractedGrade = classification.extractedGradeOrLevel;
+          }
+        }
+      } catch (err) {
+        console.warn('[InterviewProtocol] Classification step failed, falling back to standard dialog:', err);
+      }
+    }
+
+    if (clarifyText) {
+      const docNames = Array.from(docMap.values());
+      await supabaseAdmin.from('ai_queries').update({
+        answer: clarifyText,
+        source_documents: docNames,
+        model_used: 'gemini-3.5-flash-stable',
+        tokens_used: { input: 0, output: 0 },
+        status: 'completed',
+        completed_at: new Date().toISOString()
+      }).eq('id', queryId);
+
+      for (const docId of docIds) {
+        await logDocumentAccess(docId, userId, 'query', `Q: ${question} (Intercepción: Falta grado)`, ipAddress);
+      }
+
+      return { queryId, question, answer: clarifyText, sourceDocuments: docNames, tokensUsed: { input: 0, output: 0 } };
+    }
+
+    let levelContextInstruction = '';
+    if (extractedGrade) {
+      levelContextInstruction = `\n\nATENCIÓN: El usuario ha especificado que el grado/nivel escolar aplicable es: "${extractedGrade}". Filtra el contexto y responde basándote estrictamente en las reglas para este nivel/grado.`;
+    }
+
+    // D2. Respuesta (Optimizado con Inteligencia Dialógica)
     const systemPrompt = `Eres el Asistente Institucional de la Escuela Bilingüe Maquilishuat (EBM). 
 Tu misión es actuar como un Consultor Normativo profesional.
 
@@ -193,7 +272,7 @@ PROTOCOLO DE ENTREVISTA (SÚPER IMPORTANTE):
 2. LA PREGUNTA LÓGICA: Si la normativa depende del grado y el usuario NO lo ha mencionado en su pregunta ni en el historial, NO des la respuesta completa. En su lugar, saluda amablemente y pide el dato faltante (Ej: "¿Podría indicarme de qué grado es el estudiante? Nuestra normativa varía según el nivel académico").
 3. MEMORIA: Revisa el HISTORIAL DE CONVERSACIÓN para ver si el usuario ya te dio ese dato antes.
 4. TONO: Institucional, amable y empático. NUNCA uses lenguaje técnico como "fragmento", "contexto proporcionado" o "sección".
-5. CIERRE: Si tienes la información completa, responde con seguridad citando el documento de forma natural.
+5. CIERRE: Si tienes la información completa, responde con seguridad citando el documento de forma natural.${levelContextInstruction}
 
 HISTORIAL RECIENTE:
 ${chatHistory}`;

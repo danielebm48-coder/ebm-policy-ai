@@ -1,0 +1,128 @@
+[
+  {
+    "id": "dlog_6641e7e5-0f53-4a1a-ad7b-3f3a66898427",
+    "document_id": "doc_1781297520172",
+    "user_id": "u_alumno",
+    "action": "query",
+    "details": "Q: ¿Qué dice el manual sobre la puntualidad?",
+    "ip_address": null,
+    "created_at": "2026-06-19T14:48:39.847Z"
+  },
+  {
+    "id": "dlog_e42b0693-0ec1-483e-8f0c-c39a41cc2f13",
+    "document_id": "doc_1780952507906",
+    "user_id": "u_alumno",
+    "action": "query",
+    "details": "Q: ¿Qué dice el manual sobre la puntualidad?",
+    "ip_address": null,
+    "created_at": "2026-06-19T14:48:40.005Z"
+  },
+  {
+    "id": "dlog_7139f291-6954-4eac-aa5a-9fd72a64b200",
+    "document_id": "doc_1781297520172",
+    "user_id": "u_alumno",
+    "action": "query",
+    "details": "Q: ¿Qué dice el manual sobre la puntualidad?",
+    "ip_address": "127.0.0.1",
+    "created_at": "2026-06-19T14:57:06.044Z"
+  },
+  {
+    "id": "dlog_b27c746b-284c-48d4-a914-2b1165abab73",
+    "document_id": "doc_1780952507906",
+    "user_id": "u_alumno",
+    "action": "query",
+    "details": "Q: ¿Qué dice el manual sobre la puntualidad?",
+    "ip_address": "127.0.0.1",
+    "created_at": "2026-06-19T14:57:06.192Z"
+  },
+  {
+    "id": "dlog_d807bd82-284c-42e2-bd00-09692305578a",
+    "document_id": "doc_1781297520172",
+    "user_id": "u_alumno",
+    "action": "query",
+    "details": "Q: ¿Qué dice el manual sobre la puntualidad?",
+    "ip_address": "127.0.0.1",
+    "created_at": "2026-06-19T14:57:57.959Z"
+  },
+  {
+    "id": "dlog_ff7b4855-db46-4b86-b7bb-80eceded12c2",
+    "document_id": "doc_1780952507906",
+    "user_id": "u_alumno",
+    "action": "query",
+    "details": "Q: ¿Qué dice el manual sobre la puntualidad?",
+    "ip_address": "127.0.0.1",
+    "created_at": "2026-06-19T14:57:58.049Z"
+  },
+  {
+    "id": "dlog_c3280d85-0b7b-45aa-929e-2dffc976505d",
+    "document_id": "doc_1780952507906",
+    "user_id": "u_dguzman_admin",
+    "action": "query",
+    "details": "Q: Quiero saber sobre la política de uso de celulares, mi hijo de cuarto grado lo debe llevar ",
+    "ip_address": "127.0.0.1",
+    "created_at": "2026-06-19T15:56:50.886Z"
+  },
+  {
+    "id": "dlog_b68254ec-98cf-4a51-95a6-5602086e76f7",
+    "document_id": "doc_1781297520172",
+    "user_id": "u_dguzman_admin",
+    "action": "query",
+    "details": "Q: Quiero saber sobre la política de uso de celulares, mi hijo de cuarto grado lo debe llevar ",
+    "ip_address": "127.0.0.1",
+    "created_at": "2026-06-19T15:56:51.014Z"
+  },
+  {
+    "id": "dlog_72b0e014-2f51-4b10-b06a-78e16fc12067",
+    "document_id": "doc_1780952507906",
+    "user_id": "u_dguzman_admin",
+    "action": "query",
+    "details": "Q: quiero saber si mi hijo de 4to grado puede llevar su celular a la escuela? ",
+    "ip_address": "127.0.0.1",
+    "created_at": "2026-06-19T16:02:20.018Z"
+  },
+  {
+    "id": "dlog_5c6e7c9c-4ab6-4be1-8662-080dbe53619e",
+    "document_id": "doc_1781297520172",
+    "user_id": "u_dguzman_admin",
+    "action": "query",
+    "details": "Q: quiero saber si mi hijo de 4to grado puede llevar su celular a la escuela? ",
+    "ip_address": "127.0.0.1",
+    "created_at": "2026-06-19T16:02:20.096Z"
+  },
+  {
+    "id": "dlog_ce794709-79fe-4fd1-b980-5257a2112669",
+    "document_id": "doc_1781297520172",
+    "user_id": "u_dguzman_admin",
+    "action": "query",
+    "details": "Q: Que tipo de extracurriculares puede hacer mi hijo que está en cuarto grado ",
+    "ip_address": "127.0.0.1",
+    "created_at": "2026-06-19T16:10:43.697Z"
+  },
+  {
+    "id": "dlog_863c80fd-de41-4206-8cc0-bc6856a0ae41",
+    "document_id": "doc_1780952507906",
+    "user_id": "u_dguzman_admin",
+    "action": "query",
+    "details": "Q: Que tipo de extracurriculares puede hacer mi hijo que está en cuarto grado ",
+    "ip_address": "127.0.0.1",
+    "created_at": "2026-06-19T16:10:43.742Z"
+  },
+  {
+    "id": "dlog_a57a462b-f272-4206-b10f-f76acd510595",
+    "document_id": "doc_1780952507906",
+    "user_id": "u_dguzman_admin",
+    "action": "query",
+    "details": "Q: Quiero saber sobre los celulares. A mi hijo se lo decomisaron, cómo puedo hacer? El va a quinto grado de primaria ",
+    "ip_address": "127.0.0.1",
+    "created_at": "2026-06-19T17:09:20.206Z"
+  },
+  {
+    "id": "dlog_4532837b-5f2c-4de1-887b-22fbd66c882b",
+    "document_id": "doc_1781297520172",
+    "user_id": "u_dguzman_admin",
+    "action": "query",
+    "details": "Q: Quiero saber sobre los celulares. A mi hijo se lo decomisaron, cómo puedo hacer? El va a quinto grado de primaria ",
+    "ip_address": "127.0.0.1",
+    "created_at": "2026-06-19T17:09:20.248Z"
+  }
+]

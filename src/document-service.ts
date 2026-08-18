@@ -173,7 +173,8 @@ export async function uploadDocumentFile(
 ): Promise<string> {
   const storagePath = `documents/${documentId}/${fileName}`;
 
-  const { data, error } = await supabaseClient.storage
+  const dbClient = supabaseAdmin || supabaseClient;
+  const { data, error } = await dbClient.storage
     .from('policies')
     .upload(storagePath, file, {
       contentType: 'application/octet-stream',

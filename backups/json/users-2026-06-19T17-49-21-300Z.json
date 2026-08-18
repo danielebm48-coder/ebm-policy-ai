@@ -1,0 +1,146 @@
+[
+  {
+    "id": "u_67ugmzuv",
+    "name": "Alejandra Cruz",
+    "email": "ibcoordinator@ebm.edu.sv",
+    "role": "admin",
+    "active": true,
+    "password": "Mailebm29",
+    "created_at": "2026-06-04T19:34:02.623Z"
+  },
+  {
+    "id": "u_gb3yo066",
+    "name": "Clarisa Núñez ",
+    "email": "consejeria@ebm.edu.sv",
+    "role": "admin",
+    "active": true,
+    "password": "Nemida0204",
+    "created_at": "2026-06-04T19:32:51.165Z"
+  },
+  {
+    "id": "u_fxypnl40",
+    "name": "Raúl Rodríguez ",
+    "email": "raul.rodriguez@ebm.edu.sv",
+    "role": "admin",
+    "active": true,
+    "password": "raul2026",
+    "created_at": "2026-06-04T19:31:46.410Z"
+  },
+  {
+    "id": "u_qstdruri",
+    "name": "Marcela Molina",
+    "email": "preschool@ebm.edu.sv",
+    "role": "admin",
+    "active": true,
+    "password": "lamaqui",
+    "created_at": "2026-06-04T15:13:02.270Z"
+  },
+  {
+    "id": "u_95oad7oz",
+    "name": "Sistema",
+    "email": "talentohumano@ebm.edu.sv",
+    "role": "admin",
+    "active": true,
+    "password": "render-managed",
+    "created_at": "2026-06-02T20:28:11.094Z"
+  },
+  {
+    "id": "u_nglr6o5s",
+    "name": "Sistema",
+    "email": "vice.principal@ebm.edu.sv",
+    "role": "admin",
+    "active": true,
+    "password": "render-managed",
+    "created_at": "2026-06-12T20:52:41.954Z"
+  },
+  {
+    "id": "u_test_user",
+    "name": "Profesor Luis",
+    "email": "profesor@escuela.com",
+    "role": "profesor",
+    "active": true,
+    "password": "render-managed",
+    "created_at": "2026-05-29T20:17:17.540Z"
+  },
+  {
+    "id": "u_system",
+    "name": "Sistema",
+    "email": "system@colegio.edu",
+    "role": "admin",
+    "active": true,
+    "password": "system2026",
+    "created_at": "2026-05-22T16:54:36.526Z"
+  },
+  {
+    "id": "u_enadeh_admin",
+    "name": "E. Nadeh",
+    "email": "enadeh@ebm.edu.sv",
+    "role": "directivo",
+    "active": true,
+    "password": "admin2026",
+    "created_at": "2026-06-03T17:10:07.362Z"
+  },
+  {
+    "id": "u_directivo",
+    "name": "Directora Ana",
+    "email": "ana@colegio.edu",
+    "role": "directivo",
+    "active": true,
+    "password": "directivo2026",
+    "created_at": "2026-05-22T16:54:36.526Z"
+  },
+  {
+    "id": "u_profesor",
+    "name": "Profesor Luis",
+    "email": "luis@colegio.edu",
+    "role": "profesor",
+    "active": true,
+    "password": "profesor2026",
+    "created_at": "2026-05-22T16:54:36.526Z"
+  },
+  {
+    "id": "u_demo_profesor",
+    "name": "Profesor Demo",
+    "email": "demo@colegio.edu",
+    "role": "profesor",
+    "active": true,
+    "password": "demo2026",
+    "created_at": "2026-05-29T14:08:01.921Z"
+  },
+  {
+    "id": "u_profesor_demo",
+    "name": "Profesor Demo Web",
+    "email": "profesor.demo@colegio.edu",
+    "role": "profesor",
+    "active": true,
+    "password": "profesor2026",
+    "created_at": "2026-06-01T18:04:11.225Z"
+  },
+  {
+    "id": "u_alumno",
+    "name": "Alumno Mario",
+    "email": "mario@colegio.edu",
+    "role": "alumno",
+    "active": true,
+    "password": "alumno2026",
+    "created_at": "2026-06-19T14:57:32.548Z"
+  },
+  {
+    "id": "u_padre",
+    "name": "Padre Carmen",
+    "email": "carmen@colegio.edu",
+    "role": "padre",
+    "active": true,
+    "password": "padre2026",
+    "created_at": "2026-05-22T16:54:36.526Z"
+  },
+  {
+    "id": "u_dguzman_admin",
+    "name": "Sistema",
+    "email": "dguzman@ebm.edu.sv",
+    "role": "admin",
+    "active": true,
+    "password": "render-managed",
+    "created_at": "2026-06-19T17:09:02.442Z"
+  }
+]

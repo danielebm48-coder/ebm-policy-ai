@@ -1,0 +1,62 @@
+[
+  {
+    "id": "perm_45479505-6212-4416-818c-5055263375c7",
+    "role_id": "admin",
+    "can_view": true,
+    "can_search": true,
+    "can_ask_questions": true,
+    "can_upload": true,
+    "can_manage": true,
+    "rate_limit_per_hour": 1000,
+    "created_at": "2026-05-26T16:05:42.324Z",
+    "updated_at": "2026-05-26T16:05:42.324Z"
+  },
+  {
+    "id": "perm_b33100b3-859b-447c-b71f-5e965cb3ee3e",
+    "role_id": "directivo",
+    "can_view": true,
+    "can_search": true,
+    "can_ask_questions": true,
+    "can_upload": true,
+    "can_manage": true,
+    "rate_limit_per_hour": 500,
+    "created_at": "2026-05-26T16:05:42.324Z",
+    "updated_at": "2026-05-26T16:05:42.324Z"
+  },
+  {
+    "id": "perm_43bbe7d5-6ebb-4b00-a83b-3629f1e7edc9",
+    "role_id": "profesor",
+    "can_view": true,
+    "can_search": true,
+    "can_ask_questions": true,
+    "can_upload": false,
+    "can_manage": false,
+    "rate_limit_per_hour": 200,
+    "created_at": "2026-05-26T16:05:42.324Z",
+    "updated_at": "2026-05-26T16:05:42.324Z"
+  },
+  {
+    "id": "perm_1eced809-4d98-4e33-a91c-d4bfbc979149",
+    "role_id": "alumno",
+    "can_view": true,
+    "can_search": true,
+    "can_ask_questions": true,
+    "can_upload": false,
+    "can_manage": false,
+    "rate_limit_per_hour": 100,
+    "created_at": "2026-05-26T16:05:42.324Z",
+    "updated_at": "2026-05-26T16:05:42.324Z"
+  },
+  {
+    "id": "perm_df7e4f5e-8f23-4ffc-bc49-6f3e533a21a5",
+    "role_id": "padre",
+    "can_view": true,
+    "can_search": true,
+    "can_ask_questions": true,
+    "can_upload": false,
+    "can_manage": false,
+    "rate_limit_per_hour": 100,
+    "created_at": "2026-05-26T16:05:42.324Z",
+    "updated_at": "2026-05-26T16:05:42.324Z"
+  }
+]

@@ -1,0 +1,82 @@
+[
+  {
+    "id": "daccess_d71f364e-8652-4715-a5dc-3ff675d724c5",
+    "document_id": "doc_1780952507906",
+    "role_id": "admin",
+    "access_level": "ask",
+    "created_at": "2026-06-08T21:02:00.218Z",
+    "updated_at": "2026-06-08T21:02:00.218Z"
+  },
+  {
+    "id": "daccess_b7839a17-6e48-4972-b0fb-10a4513c6dc8",
+    "document_id": "doc_1780952507906",
+    "role_id": "directivo",
+    "access_level": "ask",
+    "created_at": "2026-06-08T21:02:00.218Z",
+    "updated_at": "2026-06-08T21:02:00.218Z"
+  },
+  {
+    "id": "daccess_1738b892-0ff1-4c1b-be64-d303a05f4b40",
+    "document_id": "doc_1780952507906",
+    "role_id": "profesor",
+    "access_level": "ask",
+    "created_at": "2026-06-08T21:02:00.218Z",
+    "updated_at": "2026-06-08T21:02:00.218Z"
+  },
+  {
+    "id": "daccess_2eaf8da7-5449-4d9b-9dcb-d3e06f75abce",
+    "document_id": "doc_1780952507906",
+    "role_id": "alumno",
+    "access_level": "ask",
+    "created_at": "2026-06-08T21:02:00.218Z",
+    "updated_at": "2026-06-08T21:02:00.218Z"
+  },
+  {
+    "id": "daccess_67cc3692-f819-4293-8ffa-7dbd1b96f1ef",
+    "document_id": "doc_1780952507906",
+    "role_id": "padre",
+    "access_level": "ask",
+    "created_at": "2026-06-08T21:02:00.218Z",
+    "updated_at": "2026-06-08T21:02:00.218Z"
+  },
+  {
+    "id": "daccess_97adc37c-e417-4623-92e5-ddb6be14aa8e",
+    "document_id": "doc_1781297520172",
+    "role_id": "admin",
+    "access_level": "ask",
+    "created_at": "2026-06-12T20:52:14.221Z",
+    "updated_at": "2026-06-12T20:52:14.221Z"
+  },
+  {
+    "id": "daccess_f1877b72-958e-43fe-8fe7-cd8493f16911",
+    "document_id": "doc_1781297520172",
+    "role_id": "directivo",
+    "access_level": "ask",
+    "created_at": "2026-06-12T20:52:14.221Z",
+    "updated_at": "2026-06-12T20:52:14.221Z"
+  },
+  {
+    "id": "daccess_b98fc6de-7d7d-444d-97c8-faeeb0010890",
+    "document_id": "doc_1781297520172",
+    "role_id": "profesor",
+    "access_level": "ask",
+    "created_at": "2026-06-12T20:52:14.221Z",
+    "updated_at": "2026-06-12T20:52:14.221Z"
+  },
+  {
+    "id": "daccess_3cd9fda7-a3d8-4ddd-8124-f9d86bdffd0d",
+    "document_id": "doc_1781297520172",
+    "role_id": "alumno",
+    "access_level": "ask",
+    "created_at": "2026-06-12T20:52:14.221Z",
+    "updated_at": "2026-06-12T20:52:14.221Z"
+  },
+  {
+    "id": "daccess_c2190f4b-45f2-4005-b839-a020e3c90a06",
+    "document_id": "doc_1781297520172",
+    "role_id": "padre",
+    "access_level": "ask",
+    "created_at": "2026-06-12T20:52:14.221Z",
+    "updated_at": "2026-06-12T20:52:14.221Z"
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "profesor",
+    "name": "Profesor",
+    "description": "Rol profesor",
+    "created_at": "2026-06-01T18:04:11.225Z"
+  },
+  {
+    "id": "alumno",
+    "name": "Estudiante",
+    "description": "Rol alumno",
+    "created_at": "2026-06-19T14:57:32.548Z"
+  },
+  {
+    "id": "directivo",
+    "name": "Directivo/Rectoria",
+    "description": "Rol directivo",
+    "created_at": "2026-06-19T15:56:29.372Z"
+  },
+  {
+    "id": "padre",
+    "name": "Padre/Apoderado",
+    "description": "Acceso a politicas para familias",
+    "created_at": "2026-05-26T16:05:42.324Z"
+  },
+  {
+    "id": "admin",
+    "name": "Administrador",
+    "description": "Rol admin",
+    "created_at": "2026-06-19T17:09:02.442Z"
+  }
+]

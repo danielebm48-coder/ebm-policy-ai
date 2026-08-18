@@ -16,6 +16,7 @@ import {
 } from '../src/services/policyService';
 import { 
   createToken, 
+  verifyToken,
   initAuth, 
   loginUser, 
   registerUser, 
@@ -48,14 +49,19 @@ interface AuthRequest extends Request {
 }
 
 const requireAuth = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const userId = req.headers['x-user-id'] as string;
-  const userRole = req.headers['x-user-role'] as string;
-
-  if (!userId || !userRole) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'User authentication required' });
   }
 
-  req.user = { id: userId, role: userRole };
+  const token = authHeader.substring(7);
+  const payload = verifyToken(token);
+
+  if (!payload) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  req.user = { id: payload.userId, role: payload.role };
   next();
 };
 
@@ -86,7 +92,7 @@ app.post('/api/auth/login', async (req, res) => {
     if (!result) return res.status(401).json({ error: 'Credenciales invalidas' });
     if (result.error) return res.status(403).json({ error: result.error });
 
-    const token = createToken(result.user!.id, result.user!.role);
+    const token = createToken(result.user!.id, result.user!.role, result.user!.email);
     res.json({ token, user: result.user });
   } catch (error) {
     console.error('[ERROR] Login failed:', error);
@@ -106,7 +112,7 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: result.error });
     }
 
-    const token = result.pendingApproval ? null : createToken(result.user!.id, result.user!.role);
+    const token = result.pendingApproval ? null : createToken(result.user!.id, result.user!.role, result.user!.email);
     res.status(201).json({ 
       token, 
       user: result.user, 
