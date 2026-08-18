@@ -730,36 +730,24 @@ const AdminPanel: React.FC = () => {
 
       {/* SECCIÓN DE APROBACIONES (Prioridad Máxima) */}
       {role === 'directivo' && pendingApprovals.length > 0 && (
-        <section style={{ backgroundColor: '#fff7ed', padding: '1.5rem', borderRadius: 'var(--radius-lg)', border: '1px solid #fed7aa', marginBottom: '2rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <section className="approval-section">
+          <div className="approval-header">
             <h2 style={{ fontSize: '1.25rem', margin: 0, color: '#9a3412', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ display: 'inline-block', width: '10px', height: '10px', backgroundColor: '#f97316', borderRadius: '50%' }}></span>
               Solicitudes de Acceso Pendientes
             </h2>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, backgroundColor: '#ffedd5', color: '#9a3412', padding: '0.25rem 0.65rem', borderRadius: '1rem' }}>
-              {pendingApprovals.length} nuevas
-            </span>
+            <span className="approval-count">{pendingApprovals.length} nuevas</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div className="approval-list">
             {pendingApprovals.map((req) => (
-              <div key={req.id} style={{ backgroundColor: 'var(--white)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid #fdba74', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+              <div key={req.id} className="approval-item">
                 <div>
                   <div style={{ fontWeight: 600, fontSize: '0.9375rem' }}>{req.user_name}</div>
                   <div style={{ fontSize: '0.8125rem', color: '#64748b' }}>{req.user_email} • Rol: <strong style={{ color: 'var(--metallic-green-dark)' }}>{req.requested_role}</strong></div>
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button 
-                    onClick={() => handleApprove(req.id)}
-                    style={{ backgroundColor: 'var(--action-green)', color: 'white', border: 'none', padding: '0.45rem 0.85rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}
-                  >
-                    Aprobar
-                  </button>
-                  <button 
-                    onClick={() => handleReject(req.id)}
-                    style={{ backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #fca5a5', padding: '0.45rem 0.85rem', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem', fontWeight: 600, cursor: 'pointer' }}
-                  >
-                    Rechazar
-                  </button>
+                <div className="approval-actions">
+                  <button onClick={() => handleApprove(req.id)} className="btn-small btn-approve">Aprobar</button>
+                  <button onClick={() => handleReject(req.id)} className="btn-small btn-reject">Rechazar</button>
                 </div>
               </div>
             ))}
@@ -768,16 +756,9 @@ const AdminPanel: React.FC = () => {
       )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '1rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem', flex: 1 }}>
+        <div className="stats-grid">
           {stats.map((stat, i) => (
-            <div key={i} style={{
-              padding: '1.25rem',
-              backgroundColor: 'var(--white)',
-              borderRadius: 'var(--radius-md)',
-              boxShadow: 'var(--shadow-sm)',
-              border: '1px solid var(--nickel-medium)',
-              borderTop: `4px solid ${stat.color}`,
-            }}>
+            <div key={i} className="stat-card" style={{ borderTop: `4px solid ${stat.color}` }}>
               <div style={{ fontSize: '0.8125rem', color: '#64748b', marginBottom: '0.5rem', fontWeight: 600 }}>{stat.label}</div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem' }}>
                 <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: 'var(--text-dark)' }}>{stat.value}</div>
@@ -787,23 +768,20 @@ const AdminPanel: React.FC = () => {
           ))}
         </div>
         {role === 'directivo' && (
-          <button 
-            onClick={async () => {
-              if (window.confirm('🚨 ¡ALERTA! Esto eliminará TODO el historial de preguntas, calificaciones y logs de auditoría permanentemente. ¿Deseas reiniciar el sistema de datos?')) {
-                try {
-                  const resp = await fetch(`${apiBaseUrl}/api/policies/admin/system/reset-all`, {
-                    method: 'POST',
-                    headers: { 'x-user-id': auth.user.id, 'x-user-role': role }
-                  });
-                  if (resp.ok) {
-                    alert('Sistema de datos reiniciado completamente.');
-                    window.location.reload();
-                  }
-                } catch (e) { console.error(e); }
-              }
-            }}
-            style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '0.65rem 1rem', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer', marginLeft: '1rem', height: 'fit-content', whiteSpace: 'nowrap' }}
-          >
+          <button onClick={async () => {
+            if (window.confirm('🚨 ¡ALERTA! Esto eliminará TODO el historial de preguntas, calificaciones y logs de auditoría permanentemente. ¿Deseas reiniciar el sistema de datos?')) {
+              try {
+                const resp = await fetch(`${apiBaseUrl}/api/policies/admin/system/reset-all`, {
+                  method: 'POST',
+                  headers: { 'x-user-id': auth.user.id, 'x-user-role': role }
+                });
+                if (resp.ok) {
+                  alert('Sistema de datos reiniciado completamente.');
+                  window.location.reload();
+                }
+              } catch (e) { console.error(e); }
+            }
+          }} className="btn-small" style={{ marginLeft: '1rem', backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '0.65rem 1rem', borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: '0.75rem', cursor: 'pointer', height: 'fit-content', whiteSpace: 'nowrap' }}>
             BORRADO TOTAL DE PREGUNTAS
           </button>
         )}

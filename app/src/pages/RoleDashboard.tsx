@@ -142,72 +142,20 @@ const RoleDashboard: React.FC = () => {
 
   return (
     <Layout role={role} title="Consulta Normativa Inteligente">
-      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 250px)', maxWidth: '900px', margin: '0 auto' }}>
-        <div style={{ 
-          flex: 1, 
-          overflowY: 'auto', 
-          padding: '1.5rem', 
-          display: 'flex', 
-          flexDirection: 'column', 
-          gap: '1.5rem',
-          backgroundColor: '#f8fafc',
-          borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0',
-          border: '1px solid var(--nickel-medium)',
-          borderBottom: 'none'
-        }}>
+      <div className="chat-wrapper">
+        <div className="chat-messages">
           {Array.isArray(messages) && messages.map((msg) => (
-            <div 
-              key={msg.id} 
-              style={{ 
-                alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                maxWidth: '80%',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start'
-              }}
-            >
-              <div style={{ 
-                padding: '1rem 1.25rem', 
-                borderRadius: msg.sender === 'user' ? '18px 18px 2px 18px' : '18px 18px 18px 2px',
-                backgroundColor: msg.sender === 'user' ? 'var(--nickel-light)' : 'var(--white)',
-                color: 'var(--text-dark)',
-                boxShadow: 'var(--shadow-sm)',
-                border: msg.sender === 'user' ? '1px solid var(--nickel-medium)' : '1px solid var(--primary-blue)',
-                position: 'relative'
-              }}>
+            <div key={msg.id} className={`msg ${msg.sender === 'user' ? 'user' : 'ai'}`}>
+              <div className="msg-bubble">
                 {msg.text}
                 {msg.reference && (
-                  <div style={{ 
-                    marginTop: '0.75rem', 
-                    paddingTop: '0.75rem', 
-                    borderTop: '1px solid var(--nickel-light)',
-                    fontSize: '0.75rem',
-                    color: 'var(--accent-gold)',
-                    fontWeight: 'bold',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem'
-                  }}>
-                    <span style={{ 
-                      display: 'inline-block', 
-                      width: '6px', 
-                      height: '6px', 
-                      backgroundColor: 'var(--accent-gold)', 
-                      borderRadius: '50%' 
-                    }}></span>
+                  <div className="msg-reference">
+                    <span style={{ display: 'inline-block', width: '6px', height: '6px', backgroundColor: 'var(--accent-gold)', borderRadius: '50%' }} />
                     {msg.reference}
                   </div>
                 )}
                 {msg.sender === 'ai' && msg.id !== '1' && !msg.rated && (
-                  <div style={{ 
-                    marginTop: '0.85rem', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '0.4rem', 
-                    borderTop: '1px solid #f1f5f9', 
-                    paddingTop: '0.6rem',
-                    animation: 'fadeIn 0.5s ease'
-                  }}>
+                  <div style={{ marginTop: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.6rem' }}>
                     <span style={{ fontSize: '0.7rem', color: '#94a3b8', marginRight: '0.2rem' }}>Valorar respuesta:</span>
                     {[1, 2, 3, 4, 5].map((star) => (
                       <button 
@@ -215,16 +163,7 @@ const RoleDashboard: React.FC = () => {
                         onClick={() => handleRate(msg.id, star)}
                         onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.2)')}
                         onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-                        style={{ 
-                          background: 'transparent', 
-                          border: 'none', 
-                          cursor: 'pointer', 
-                          fontSize: '0.9rem', 
-                          padding: '0 2px',
-                          transition: 'transform 0.2s ease',
-                          filter: 'grayscale(0.5)',
-                          opacity: 0.7
-                        }}
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '0.9rem', padding: '0 2px', transition: 'transform 0.2s ease', filter: 'grayscale(0.5)', opacity: 0.7 }}
                         title={`${star} estrellas`}
                       >
                         ⭐
@@ -233,65 +172,23 @@ const RoleDashboard: React.FC = () => {
                   </div>
                 )}
                 {msg.rated && (
-                  <div style={{ 
-                    marginTop: '0.6rem', 
-                    fontSize: '0.65rem', 
-                    color: 'var(--action-green)', 
-                    fontStyle: 'italic',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.3rem',
-                    animation: 'fadeIn 0.3s ease'
-                  }}>
+                  <div style={{ marginTop: '0.6rem', fontSize: '0.65rem', color: 'var(--action-green)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                     <span style={{ fontSize: '0.8rem' }}>✓</span> Calificación registrada. ¡Gracias!
                   </div>
                 )}
               </div>
-              <span style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.25rem' }}>
-                {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
+              <span className="msg-meta">{msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             </div>
           ))}
           {isTyping && (
-            <div style={{ alignSelf: 'flex-start', backgroundColor: 'var(--white)', padding: '0.75rem 1.25rem', borderRadius: '18px', border: '1px solid var(--primary-blue)', boxShadow: 'var(--shadow-sm)' }}>
-              <span style={{ color: 'var(--primary-blue)', fontSize: '0.875rem', fontStyle: 'italic' }}>La IA está consultando las políticas...</span>
-            </div>
+            <div className="chat-typing"><span style={{ color: 'var(--primary-blue)', fontSize: '0.875rem', fontStyle: 'italic' }}>La IA está consultando las políticas...</span></div>
           )}
           <div ref={messagesEndRef} />
         </div>
 
-        <form 
-          onSubmit={handleSend}
-          style={{ 
-            display: 'flex', 
-            padding: '1.25rem', 
-            backgroundColor: 'var(--white)', 
-            border: '1px solid var(--nickel-medium)',
-            borderRadius: '0 0 var(--radius-lg) var(--radius-lg)',
-            gap: '1rem',
-            boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)'
-          }}
-        >
-          <input 
-            type="text" 
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Escribe tu consulta sobre las normas de la escuela..."
-            style={{ flex: 1, border: '1px solid var(--nickel-medium)' }}
-          />
-          <button 
-            type="submit"
-            style={{ 
-              backgroundColor: 'var(--action-green)', 
-              color: 'var(--white)', 
-              border: 'none', 
-              padding: '0.5rem 1.5rem', 
-              borderRadius: 'var(--radius-md)',
-              fontWeight: 600
-            }}
-          >
-            Preguntar
-          </button>
+        <form onSubmit={handleSend} className="chat-form">
+          <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Escribe tu consulta sobre las normas de la escuela..." className="chat-input" />
+          <button type="submit" className="btn-action">Preguntar</button>
         </form>
       </div>
     </Layout>
