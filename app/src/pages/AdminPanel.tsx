@@ -446,9 +446,7 @@ const AdminPanel: React.FC = () => {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'x-user-id': auth?.user?.id || 'u_admin',
-          'x-user-role': role || 'admin',
-          'x-user-email': auth?.user?.email || ''
+          ...authHeaders
         },
         body: JSON.stringify({ question })
       });
@@ -773,7 +771,7 @@ const AdminPanel: React.FC = () => {
               try {
                 const resp = await fetch(`${apiBaseUrl}/api/policies/admin/system/reset-all`, {
                   method: 'POST',
-                  headers: { 'x-user-id': auth.user.id, 'x-user-role': role }
+                  headers: { ...authHeaders }
                 });
                 if (resp.ok) {
                   alert('Sistema de datos reiniciado completamente.');

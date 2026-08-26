@@ -4,9 +4,100 @@ loadEnv();
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'gemini-2.0-flash-lite';
+const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001';
+const GEMINI_MAX_RETRIES = Number.parseInt(process.env.GEMINI_MAX_RETRIES || '3', 10);
+const GEMINI_MIN_INTERVAL_MS = Number.parseInt(process.env.GEMINI_MIN_INTERVAL_MS || '4000', 10);
+const GEMINI_MAX_OUTPUT_TOKENS = Number.parseInt(process.env.GEMINI_MAX_OUTPUT_TOKENS || '1536', 10);
+
+let nextGeminiRequestAt = 0;
+let geminiThrottleQueue = Promise.resolve();
 
 if (!GEMINI_API_KEY) {
   console.warn('⚠️  GEMINI_API_KEY not configured. AI features will be disabled.');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function throttleGeminiRequest(): Promise<void> {
+  let release!: () => void;
+  const previous = geminiThrottleQueue;
+  geminiThrottleQueue = new Promise((resolve) => {
+    release = resolve;
+  });
+
+  await previous;
+
+  try {
+    const waitMs = Math.max(0, nextGeminiRequestAt - Date.now());
+    if (waitMs > 0) {
+      await sleep(waitMs);
+    }
+    nextGeminiRequestAt = Date.now() + Math.max(0, GEMINI_MIN_INTERVAL_MS);
+  } finally {
+    release();
+  }
+}
+
+function getRetryDelayMs(response: Response, attempt: number): number {
+  const retryAfter = response.headers.get('retry-after');
+  if (retryAfter) {
+    const seconds = Number.parseInt(retryAfter, 10);
+    if (!Number.isNaN(seconds)) return seconds * 1000;
+
+    const retryDate = Date.parse(retryAfter);
+    if (!Number.isNaN(retryDate)) return Math.max(0, retryDate - Date.now());
+  }
+
+  return Math.min(30000, 1000 * 2 ** attempt);
+}
+
+async function fetchGemini(path: string, body: unknown): Promise<any> {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
+
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt += 1) {
+    await throttleGeminiRequest();
+
+    const response = await fetch(`${GEMINI_API_URL}/${path}?key=${GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    const apiError = data.error;
+
+    if (response.ok && !apiError) {
+      return data;
+    }
+
+    const code = apiError?.code || response.status;
+    const message = apiError?.message || response.statusText || 'Gemini request failed';
+    lastError = new Error(`Gemini Error [${code}]: ${message}`);
+
+    if ((code === 429 || code === 503) && attempt < GEMINI_MAX_RETRIES) {
+      const delayMs = getRetryDelayMs(response, attempt);
+      console.warn(`[Gemini] ${code} recibido. Reintentando en ${Math.round(delayMs / 1000)}s...`);
+      await sleep(delayMs);
+      continue;
+    }
+
+    if (code === 429) {
+      throw new Error(`LIMITE_EXCEDIDO: ${message}`);
+    }
+
+    throw lastError;
+  }
+
+  throw lastError || new Error('Gemini request failed');
 }
 
 /**
@@ -19,33 +110,13 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   }
 
   try {
-    const response = await fetch(
-      `${GEMINI_API_URL}/gemini-embedding-001:embedContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'models/gemini-embedding-001',
-          content: {
-            parts: [{ text: text }],
-          },
-          outputDimensionality: 1536,
-        }),
-      }
-    );
-
-    const data = await response.json();
-    
-    if (data.error) {
-      const code = data.error.code;
-      const message = data.error.message;
-      if (code === 429) {
-        throw new Error(`LIMITE_EXCEDIDO: (Embeddings) ${message}`);
-      }
-      throw new Error(`Gemini Embedding Error [${code}]: ${message}`);
-    }
+    const data = await fetchGemini(`${GEMINI_EMBEDDING_MODEL}:embedContent`, {
+      model: `models/${GEMINI_EMBEDDING_MODEL}`,
+      content: {
+        parts: [{ text: text }],
+      },
+      outputDimensionality: 1536,
+    });
 
     return data.embedding.values;
   } catch (error) {
@@ -81,33 +152,13 @@ ${question}
 Por favor, responde de manera clara y directa basándote en los documentos.`;
 
   try {
-    const response = await fetch(
-      `${GEMINI_API_URL}/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: fullPrompt }] }],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 2048,
-          },
-        }),
-      }
-    );
-
-    const data = await response.json();
-    
-    if (data.error) {
-      const code = data.error.code;
-      const message = data.error.message;
-      if (code === 429) {
-        throw new Error(`LIMITE_EXCEDIDO: (Chat) ${message}`);
-      }
-      throw new Error(`Gemini Chat Error [${code}]: ${message}`);
-    }
+    const data = await fetchGemini(`${GEMINI_CHAT_MODEL}:generateContent`, {
+      contents: [{ parts: [{ text: fullPrompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
+      },
+    });
 
     if (!data.candidates || data.candidates.length === 0) {
       const blockReason = data.promptFeedback?.blockReason;
@@ -160,8 +211,8 @@ export function buildSimilarityQuery(embedding: number[], limit: number = 5): st
 
 export const geminiConfig = {
   isConfigured: !!GEMINI_API_KEY,
-  model: 'gemini-pro',
-  embeddingModel: 'embedding-001',
+  model: GEMINI_CHAT_MODEL,
+  embeddingModel: GEMINI_EMBEDDING_MODEL,
   maxContextLength: 30000,
   temperatureDefault: 0.7,
 };

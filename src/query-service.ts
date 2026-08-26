@@ -19,6 +19,15 @@ interface ChunkWithSimilarity {
   similarity: number;
 }
 
+const RAG_RESULT_LIMIT = Number.parseInt(process.env.RAG_RESULT_LIMIT || '6', 10);
+const RAG_MAX_CONTEXT_CHARS = Number.parseInt(process.env.RAG_MAX_CONTEXT_CHARS || '18000', 10);
+const GEMINI_ENABLE_CLASSIFIER = process.env.GEMINI_ENABLE_CLASSIFIER !== 'false';
+
+function limitText(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n[Contexto recortado para evitar limites de cuota.]`;
+}
+
 /**
  * CAPA 1: Identificación de documentos por nombre (Estilo PDFgear)
  */
@@ -163,7 +172,7 @@ export async function processUserQuery(
       ? `${history[0].question} ${question}` 
       : question;
 
-    const candidates = await hybridSearch(searchContext, userRole, 10);
+    const candidates = await hybridSearch(searchContext, userRole, RAG_RESULT_LIMIT);
 
     if (candidates.length === 0) {
       const fallback = "La normativa actual define los lineamientos generales sobre este tema; sin embargo, para detalles específicos de implementación o casos excepcionales, le recomendamos validar directamente con la Coordinación de Nivel o la Administración, quienes podrán brindarle una guía personalizada.";
@@ -182,14 +191,17 @@ export async function processUserQuery(
     const { data: docInfo } = await supabaseAdmin.from('documents').select('id, name').in('id', docIds);
     const docMap = new Map((docInfo || []).map(d => [d.id, d.name]));
 
-    const finalContext = contextChunks.map(c => `[DOC: ${docMap.get(c.document_id) || 'Info'}]\n${c.text}`).join('\n\n---\n\n');
+    const finalContext = limitText(
+      contextChunks.map(c => `[DOC: ${docMap.get(c.document_id) || 'Info'}]\n${c.text}`).join('\n\n---\n\n'),
+      RAG_MAX_CONTEXT_CHARS
+    );
 
     // D1. Clasificación de variables (Protocolo de Entrevista Dinámica)
     let clarifyText: string | null = null;
     let extractedGrade: string | null = null;
 
     // Solo aplicamos para roles de comunidad (padre, alumno, profesor)
-    if (userRole !== 'admin' && userRole !== 'directivo') {
+    if (GEMINI_ENABLE_CLASSIFIER && userRole !== 'admin' && userRole !== 'directivo') {
       try {
         const classificationPrompt = `Eres un Clasificador de Contexto y Variables para un sistema de información escolar.
 Analiza los fragmentos de normativas recuperados, la pregunta del usuario y el historial de la conversación.
@@ -221,7 +233,7 @@ REGLAS DE CLASIFICACIÓN:
 
         const classificationResult = await generateResponse(
           "Clasifica esta consulta.",
-          [finalContext],
+          [],
           classificationPrompt
         );
         
@@ -272,7 +284,7 @@ PROTOCOLO DE ENTREVISTA (SÚPER IMPORTANTE):
 2. LA PREGUNTA LÓGICA: Si la normativa depende del grado y el usuario NO lo ha mencionado en su pregunta ni en el historial, NO des la respuesta completa. En su lugar, saluda amablemente y pide el dato faltante (Ej: "¿Podría indicarme de qué grado es el estudiante? Nuestra normativa varía según el nivel académico").
 3. MEMORIA: Revisa el HISTORIAL DE CONVERSACIÓN para ver si el usuario ya te dio ese dato antes.
 4. TONO: Institucional, amable y empático. NUNCA uses lenguaje técnico como "fragmento", "contexto proporcionado" o "sección".
-5. CIERRE: Si tienes la información completa, responde con seguridad citando el documento de forma natural.${levelContextInstruction}
+5. CITAS Y REFERENCIAS (OBLIGATORIO): Si tienes la información completa para responder, debes citar de forma explícita y visible el nombre de los documentos de origen de donde obtuviste la información directamente en el texto de tu respuesta (ej: "De acuerdo con el documento [Nombre del Documento]..."). Si la normativa contiene artículos, secciones, capítulos o numerales específicos en el texto, menciónalos detalladamente para facilitar que el usuario pueda consultarlo directamente en el documento escrito original.${levelContextInstruction}
 
 HISTORIAL RECIENTE:
 ${chatHistory}`;
