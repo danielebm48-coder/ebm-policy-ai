@@ -42,6 +42,15 @@ const finalPort = isNaN(parsedPort) ? 10000 : parsedPort;
 app.use(cors());
 app.use(bodyParser.json());
 
+// Simple request-id middleware for tracing
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  const incoming = (req.headers['x-request-id'] as string) || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+  // store on res.locals for access in handlers
+  (req as any).requestId = incoming;
+  res.locals.requestId = incoming;
+  next();
+});
+
 // Middleware para validar usuario autenticado
 interface AuthRequest extends Request {
   user?: {

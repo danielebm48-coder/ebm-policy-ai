@@ -62,47 +62,73 @@ const fallbackNames: Record<string, string> = {
   padre: 'Padre Carmen',
 };
 
-async function ensureSupabaseUser(user: AuthRequest['user']): Promise<void> {
+async function ensureSupabaseUser(user: AuthRequest['user'], requestId?: string): Promise<void> {
+  const rid = requestId || (global as any).__currentRequestId || 'no-rid';
   if (!user || !supabaseAdmin) {
-    throw new Error('Admin client not configured');
+    const msg = 'Admin client not configured';
+    console.error(`[${rid}] ensureSupabaseUser: ${msg}`);
+    throw new Error(msg);
   }
 
   const now = new Date().toISOString();
 
-  const { error: roleError } = await supabaseAdmin
-    .from('roles')
-    .upsert(
-      {
-        id: user.role,
-        name: roleNames[user.role] || user.role,
-        description: `Rol ${user.role}`,
-        created_at: now,
-      },
-      { onConflict: 'id' }
-    );
-
-  if (roleError) {
-    throw new Error(`Failed to ensure role: ${roleError.message}`);
+  // Helper to perform an operation with retries
+  async function withRetries<T>(fn: () => Promise<T>, label: string, attempts = 3): Promise<T> {
+    let lastErr: any = null;
+    for (let i = 0; i < attempts; i += 1) {
+      try {
+        if (i > 0) console.warn(`[${rid}] retry #${i} for ${label}`);
+        return await fn();
+      } catch (err: any) {
+        lastErr = err;
+        console.error(`[${rid}] Error on ${label} attempt=${i}:`, err && err.message ? err.message : err);
+        const delay = Math.pow(2, i) * 200; // exponential backoff: 200ms, 400ms, 800ms
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+    throw lastErr;
   }
 
-  const { error: userError } = await supabaseAdmin
-    .from('users')
-    .upsert(
-      {
-        id: user.id,
-        name: fallbackNames[user.role] || user.email || user.id,
-        email: user.email || `${user.id}@colegio.edu`,
-        role: user.role,
-        active: true,
-        password: 'render-managed',
-        created_at: now,
-      },
-      { onConflict: 'id' }
-    );
+  // Upsert role
+  await withRetries(async () => {
+    const { error: roleError } = await supabaseAdmin
+      .from('roles')
+      .upsert(
+        {
+          id: user.role,
+          name: roleNames[user.role] || user.role,
+          description: `Rol ${user.role}`,
+          created_at: now,
+        },
+        { onConflict: 'id' }
+      );
+    if (roleError) {
+      throw new Error(roleError.message || 'Unknown role upsert error');
+    }
+    return true;
+  }, 'upsert-role');
 
-  if (userError) {
-    throw new Error(`Failed to ensure user: ${userError.message}`);
-  }
+  // Upsert user
+  await withRetries(async () => {
+    const { error: userError } = await supabaseAdmin
+      .from('users')
+      .upsert(
+        {
+          id: user.id,
+          name: fallbackNames[user.role] || user.email || user.id,
+          email: user.email || `${user.id}@colegio.edu`,
+          role: user.role,
+          active: true,
+          password: 'render-managed',
+          created_at: now,
+        },
+        { onConflict: 'id' }
+      );
+    if (userError) {
+      throw new Error(userError.message || 'Unknown user upsert error');
+    }
+    return true;
+  }, 'upsert-user');
 }
 
 // Helper para actualizar permisos
@@ -154,7 +180,9 @@ router.post('/ask', requireAuth, async (req: AuthRequest, res: Response) => {
       });
     }
 
-    await ensureSupabaseUser(user);
+    // Pass trace id for better log correlation
+    const requestId = (req as any).requestId || res.locals.requestId || undefined;
+    await ensureSupabaseUser(user, requestId);
 
     const result = await processUserQuery(user.id, user.role, question, ipAddress);
 
