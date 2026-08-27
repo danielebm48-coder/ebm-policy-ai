@@ -312,7 +312,12 @@ ${chatHistory}`;
   } catch (error: any) {
     console.error('[QueryError]:', error);
     let msg = "Tengo dificultades técnicas temporales.";
-    if (error.message?.includes('LIMITE_EXCEDIDO')) msg = "Límite de IA alcanzado. Reintenta en 30 segundos.";
+    const errMsg = String(error?.message || '').toLowerCase();
+    if (errMsg.includes('limite_excedido') || errMsg.includes('limite') || errMsg.includes('rate limit')) {
+      msg = "Límite de IA alcanzado. Reintenta en 30 segundos.";
+    } else if (errMsg.includes('not found') || errMsg.includes('no longer available') || errMsg.includes('not found for api') || errMsg.includes('not supported')) {
+      msg = "Proveedor de IA: modelo no disponible o API incompatible. Verifica GEMINI_CHAT_MODEL y GEMINI_API_URL en la configuración del servidor.";
+    }
     
     if (supabaseAdmin) {
       await supabaseAdmin.from('ai_queries').update({ status: 'error', error_message: error.message }).eq('id', queryId);
