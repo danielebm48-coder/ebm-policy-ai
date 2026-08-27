@@ -69,6 +69,7 @@ async function ensureSupabaseUser(user: AuthRequest['user'], requestId?: string)
     console.error(`[${rid}] ensureSupabaseUser: ${msg}`);
     throw new Error(msg);
   }
+  const admin = supabaseAdmin;
 
   const now = new Date().toISOString();
 
@@ -91,7 +92,7 @@ async function ensureSupabaseUser(user: AuthRequest['user'], requestId?: string)
 
   // Upsert role
   await withRetries(async () => {
-    const { error: roleError } = await supabaseAdmin
+    const { error: roleError } = await admin
       .from('roles')
       .upsert(
         {
@@ -110,7 +111,7 @@ async function ensureSupabaseUser(user: AuthRequest['user'], requestId?: string)
 
   // Upsert user
   await withRetries(async () => {
-    const { error: userError } = await supabaseAdmin
+    const { error: userError } = await admin
       .from('users')
       .upsert(
         {
