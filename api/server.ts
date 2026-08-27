@@ -28,6 +28,8 @@ import { answerQuestion } from '../src/services/iaService';
 import { createQuery } from '../src/repositories/queryRepository';
 import { addAuditEntry } from '../src/repositories/auditRepository';
 import { initDb } from '../src/db';
+import { supabaseAdmin, testSupabaseConnection } from '../src/supabase';
+import { geminiConfig } from '../src/gemini';
 import policiesRoutes from './policies-routes';
 
 const app = express();
@@ -79,6 +81,49 @@ app.get('/api/health', (_req, res) => {
     service: 'school-policy-ai',
     time: new Date().toISOString(),
   });
+});
+
+// Health endpoint with internal checks for Supabase and Gemini configuration
+app.get('/api/health/internal', async (_req, res) => {
+  const now = new Date().toISOString();
+  const result: any = {
+    ok: true,
+    service: 'school-policy-ai',
+    time: now,
+    checks: {
+      supabase: {
+        configured: !!supabaseAdmin,
+        reachable: null,
+        message: null,
+      },
+      gemini: {
+        configured: geminiConfig.isConfigured,
+        model: geminiConfig.model,
+      },
+    },
+  };
+
+  if (supabaseAdmin) {
+    try {
+      await testSupabaseConnection();
+      result.checks.supabase.reachable = true;
+    } catch (err: any) {
+      result.ok = false;
+      result.checks.supabase.reachable = false;
+      result.checks.supabase.message = err instanceof Error ? err.message : String(err);
+    }
+  } else {
+    result.ok = false;
+    result.checks.supabase.reachable = false;
+    result.checks.supabase.message = 'SUPABASE_SERVICE_ROLE_KEY not configured';
+  }
+
+  if (!geminiConfig.isConfigured) {
+    result.ok = false;
+    result.checks.gemini.message = 'GEMINI_API_KEY not configured';
+  }
+
+  res.status(result.ok ? 200 : 503).json(result);
 });
 
 app.use('/api/policies', policiesRoutes);
