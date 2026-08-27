@@ -146,7 +146,7 @@ export async function processUserQuery(
   question: string,
   ipAddress?: string
 ): Promise<QueryResult> {
-  if (!supabaseAdmin) throw new Error('Admin client not configured');
+  if (!supabaseAdmin) throw new Error('SUPABASE_SERVICE_ROLE_KEY not configured on server; ai queries require service role key for privileged DB operations');
   const queryId = `query_${Date.now()}`;
 
   try {

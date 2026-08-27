@@ -5,6 +5,7 @@ import { supabaseClient, supabaseAdmin } from '../src/supabase';
 import { createDocument, getDocumentText, logDocumentAccess, getDocumentsByRolePermission, updateDocument, parseDocumentContent, deleteDocument } from '../src/document-service';
 import { normalizeText } from '../src/utils/encoding';
 import { processUserQuery, rateQueryResponse, getUserQueryHistory, getQueryStatistics, getIARecommendations, getStakeholderInsights, resetSystemStats, markQueryAsProcessed, clearAllSystemData } from '../src/query-service';
+import { geminiConfig } from '../src/gemini';
 import { Document, AIQuery } from '../src/supabase-types';
 
 const router = express.Router();
@@ -134,6 +135,23 @@ router.post('/ask', requireAuth, async (req: AuthRequest, res: Response) => {
 
     if (!question || question.trim().length === 0) {
       return res.status(400).json({ error: 'Question is required' });
+    }
+
+    // Pre-checks for required server configuration to provide actionable errors
+    if (!supabaseAdmin) {
+      console.error('[CONFIG] Supabase admin client not configured (SUPABASE_SERVICE_ROLE_KEY missing)');
+      return res.status(503).json({
+        error: 'Service unavailable',
+        details: 'SUPABASE_SERVICE_ROLE_KEY is not configured on the server. AI/query features require a Supabase service role key.'
+      });
+    }
+
+    if (!geminiConfig.isConfigured) {
+      console.error('[CONFIG] Gemini not configured (GEMINI_API_KEY missing)');
+      return res.status(503).json({
+        error: 'Service unavailable',
+        details: 'GEMINI_API_KEY is not configured on the server. AI generation requires a valid Gemini API key.'
+      });
     }
 
     await ensureSupabaseUser(user);
