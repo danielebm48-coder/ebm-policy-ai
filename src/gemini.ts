@@ -3,8 +3,8 @@ import { loadEnv } from './config/env';
 loadEnv();
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-const GEMINI_CHAT_MODEL = process.env.GEMINI_CHAT_MODEL || 'models/gemini-3.5-flash-lite';
+const GEMINI_API_URL = (process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1beta/models').replace(/\/$/, '');
+const GEMINI_CHAT_MODEL = (process.env.GEMINI_CHAT_MODEL || 'gemini-3.5-flash-lite').replace(/^models\//, '');
 const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001';
 const GEMINI_MAX_RETRIES = Number.parseInt(process.env.GEMINI_MAX_RETRIES || '3', 10);
 const GEMINI_MIN_INTERVAL_MS = Number.parseInt(process.env.GEMINI_MIN_INTERVAL_MS || '4000', 10);

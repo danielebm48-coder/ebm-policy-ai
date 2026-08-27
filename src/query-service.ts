@@ -1,5 +1,5 @@
 import { supabaseClient, supabaseAdmin } from './supabase';
-import { generateEmbedding, generateResponse } from './gemini';
+import { generateEmbedding, generateResponse, geminiConfig } from './gemini';
 import { logDocumentAccess } from './document-service';
 import { AIQuery } from './supabase-types';
 
@@ -257,7 +257,7 @@ REGLAS DE CLASIFICACIÓN:
       await supabaseAdmin.from('ai_queries').update({
         answer: clarifyText,
         source_documents: docNames,
-        model_used: 'gemini-3.5-flash-stable',
+        model_used: geminiConfig.model,
         tokens_used: { input: 0, output: 0 },
         status: 'completed',
         completed_at: new Date().toISOString()
@@ -296,7 +296,7 @@ ${chatHistory}`;
     await supabaseAdmin.from('ai_queries').update({
       answer: result.answer,
       source_documents: docNames,
-      model_used: 'gemini-3.5-flash-stable',
+      model_used: geminiConfig.model,
       tokens_used: result.tokensUsed,
       status: 'completed',
       completed_at: new Date().toISOString()

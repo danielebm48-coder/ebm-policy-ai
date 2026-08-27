@@ -11,7 +11,9 @@ async function testGemini() {
   const key = process.env.GEMINI_API_KEY;
   console.log('Testing Gemini Key:', key ? 'Key exists' : 'Key MISSING');
   
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${key}`;
+  const model = (process.env.GEMINI_CHAT_MODEL || 'gemini-3.5-flash-lite').replace(/^models\//, '');
+  const apiUrl = (process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1beta/models').replace(/\/$/, '');
+  const url = `${apiUrl}/${model}:generateContent?key=${key}`;
   
   try {
     const response = await fetch(url, {
