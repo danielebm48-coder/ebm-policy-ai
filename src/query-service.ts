@@ -21,7 +21,17 @@ interface ChunkWithSimilarity {
 
 const RAG_RESULT_LIMIT = Number.parseInt(process.env.RAG_RESULT_LIMIT || '12', 10);
 const RAG_MAX_CONTEXT_CHARS = Number.parseInt(process.env.RAG_MAX_CONTEXT_CHARS || '24000', 10);
-const GEMINI_ENABLE_CLASSIFIER = process.env.GEMINI_ENABLE_CLASSIFIER !== 'false';
+const GEMINI_ENABLE_CLASSIFIER = process.env.GEMINI_ENABLE_CLASSIFIER === 'true';
+
+function normalizeQuestion(question: string): string {
+  return question
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function limitText(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
@@ -167,9 +177,53 @@ export async function processUserQuery(
 ): Promise<QueryResult> {
   if (!supabaseAdmin) throw new Error('SUPABASE_SERVICE_ROLE_KEY not configured on server; ai queries require service role key for privileged DB operations');
   const queryId = `query_${Date.now()}`;
+  const normalizedQuestion = normalizeQuestion(question);
 
   try {
-    await supabaseAdmin.from('ai_queries').insert([{ id: queryId, user_id: userId, user_role: userRole, question, status: 'processing' }]);
+    // Reutilizar respuestas previamente validadas evita embedding y generación para preguntas repetidas.
+    const { data: cachedQuery } = await supabaseAdmin
+      .from('ai_queries')
+      .select('answer, source_documents, tokens_used, error_message')
+      .eq('user_role', userRole)
+      .eq('normalized_question', normalizedQuestion)
+      .eq('status', 'completed')
+      .or('error_message.is.null,error_message.neq.NO_DOCUMENT_MATCH')
+      .not('answer', 'is', null)
+      .order('requested_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (cachedQuery?.answer) {
+      await supabaseAdmin.from('ai_queries').insert([{
+        id: queryId,
+        user_id: userId,
+        user_role: userRole,
+        question,
+        normalized_question: normalizedQuestion,
+        answer: cachedQuery.answer,
+        source_documents: cachedQuery.source_documents || [],
+        tokens_used: { input: 0, output: 0, cached: true },
+        model_used: geminiConfig.model,
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      }]);
+      return {
+        queryId,
+        question,
+        answer: cachedQuery.answer,
+        sourceDocuments: cachedQuery.source_documents || [],
+        tokensUsed: { input: 0, output: 0 },
+      };
+    }
+
+    await supabaseAdmin.from('ai_queries').insert([{
+      id: queryId,
+      user_id: userId,
+      user_role: userRole,
+      question,
+      normalized_question: normalizedQuestion,
+      status: 'processing',
+    }]);
 
     // A. Obtener historial reciente para contexto (Memoria de Conversación)
     const { data: history } = await supabaseAdmin
@@ -215,19 +269,8 @@ export async function processUserQuery(
       .in('id', allDocIds);
     const docMap = new Map((docInfo || []).map(d => [d.id, d.name]));
 
-    // Si el usuario nombra un documento, usa también su contenido completo.
-    // Esto cubre documentos antiguos cuyo proceso de ingestión dejó pocos chunks.
-    const requestedDocs = (docInfo || [])
-      .filter(d => requestedDocumentIds.includes(d.id) && d.content_optimized)
-      .map(d => ({
-        text: `[DOCUMENTO COMPLETO: ${d.name}]\n${d.content_optimized}`,
-        document_id: d.id,
-        parent_id: undefined,
-      }));
-    const allContextChunks = [...requestedDocs, ...contextChunks];
-
     const finalContext = limitText(
-      allContextChunks.map(c => `[DOC: ${docMap.get(c.document_id) || 'Info'}]\n${c.text}`).join('\n\n---\n\n'),
+      contextChunks.map(c => `[DOC: ${docMap.get(c.document_id) || 'Info'}]\n${c.text}`).join('\n\n---\n\n'),
       RAG_MAX_CONTEXT_CHARS
     );
 

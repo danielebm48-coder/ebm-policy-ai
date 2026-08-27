@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS document_chunks (
   document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
   chunk_number INTEGER NOT NULL,
   text TEXT NOT NULL,
-  embedding vector(3072),
+  embedding vector(1536),
   position_in_doc JSONB,
   metadata JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS ai_queries (
   user_id TEXT NOT NULL REFERENCES users(id),
   user_role TEXT NOT NULL REFERENCES roles(id),
   question TEXT NOT NULL,
+  normalized_question TEXT,
   answer TEXT,
   source_documents TEXT[],
   source_chunks TEXT[],
@@ -253,6 +254,9 @@ CREATE INDEX IF NOT EXISTS idx_ai_queries_user_id ON ai_queries(user_id);
 CREATE INDEX IF NOT EXISTS idx_ai_queries_user_role ON ai_queries(user_role);
 CREATE INDEX IF NOT EXISTS idx_ai_queries_requested_at ON ai_queries(requested_at);
 CREATE INDEX IF NOT EXISTS idx_ai_queries_status ON ai_queries(status);
+CREATE INDEX IF NOT EXISTS idx_ai_queries_cache_lookup
+  ON ai_queries (user_role, normalized_question, requested_at DESC)
+  WHERE status = 'completed' AND answer IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_document_audit_document_id ON document_audit_logs(document_id);
 CREATE INDEX IF NOT EXISTS idx_document_audit_user_id ON document_audit_logs(user_id);
@@ -272,3 +276,6 @@ ON CONFLICT (role_id) DO NOTHING;
 
 -- Confirmación de tablas creadas
 SELECT 'Tablas del repositorio de políticas IA creadas exitosamente' AS status;
+
+
+
