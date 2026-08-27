@@ -19,8 +19,8 @@ interface ChunkWithSimilarity {
   similarity: number;
 }
 
-const RAG_RESULT_LIMIT = Number.parseInt(process.env.RAG_RESULT_LIMIT || '6', 10);
-const RAG_MAX_CONTEXT_CHARS = Number.parseInt(process.env.RAG_MAX_CONTEXT_CHARS || '18000', 10);
+const RAG_RESULT_LIMIT = Number.parseInt(process.env.RAG_RESULT_LIMIT || '12', 10);
+const RAG_MAX_CONTEXT_CHARS = Number.parseInt(process.env.RAG_MAX_CONTEXT_CHARS || '24000', 10);
 const GEMINI_ENABLE_CLASSIFIER = process.env.GEMINI_ENABLE_CLASSIFIER !== 'false';
 
 function limitText(text: string, maxChars: number): string {
@@ -33,8 +33,10 @@ function limitText(text: string, maxChars: number): string {
  */
 async function identifyTargetDocuments(question: string): Promise<string[]> {
   const db = supabaseAdmin || supabaseClient;
-  const tokens = question.toLowerCase().split(/\s+/).filter(t => t.length > 3);
-  if (tokens.length === 0) return [];
+  const normalizedQuestion = question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const documentTerms = ['manual', 'reglamento', 'politica', 'protocolo', 'procedimiento', 'codigo', 'handbook'];
+  const requestedTerms = documentTerms.filter(term => normalizedQuestion.includes(term));
+  if (requestedTerms.length === 0) return [];
 
   const { data: docs } = await db.from('documents').select('id, name').eq('status', 'active');
   if (!docs) return [];
@@ -42,7 +44,7 @@ async function identifyTargetDocuments(question: string): Promise<string[]> {
   return docs
     .filter(doc => {
       const docName = doc.name.toLowerCase();
-      return tokens.some(t => docName.includes(t));
+      return requestedTerms.some(term => docName.includes(term));
     })
     .map(doc => doc.id);
 }
@@ -86,6 +88,16 @@ async function hybridSearch(question: string, roleId: string, limit: number = 20
   }
   const { data: ftsResults } = await ftsQuery;
 
+  // La mención explícita de un documento debe funcionar aunque FTS o el índice
+  // vectorial no encuentren una coincidencia exacta dentro de sus chunks.
+  const { data: requestedChunks } = targetDocIds.length > 0
+    ? await db
+      .from('document_chunks')
+      .select('id, document_id, parent_id, text')
+      .in('document_id', targetDocIds)
+      .limit(limit)
+    : { data: [] };
+
   // 3. Búsqueda Vectorial de Chunks (Conceptual)
   let vectorResults: any[] = [];
   if (embedding && embedding.length === 1536) {
@@ -114,6 +126,12 @@ async function hybridSearch(question: string, roleId: string, limit: number = 20
     allCandidates.set(c.id, { ...c, score: (1.0 / (i + 1)) + 2.0 });
   });
 
+  (requestedChunks || []).forEach((c: any, i: number) => {
+    if (!allCandidates.has(c.id)) {
+      allCandidates.set(c.id, { ...c, score: 4.0 - (i / 100) });
+    }
+  });
+
   // Procesar Vectores
   vectorResults.forEach((c: any, i: number) => {
     const existing = allCandidates.get(c.id);
@@ -126,6 +144,7 @@ async function hybridSearch(question: string, roleId: string, limit: number = 20
   });
 
   return Array.from(allCandidates.values())
+    .filter(candidate => targetDocIds.length === 0 || targetDocIds.includes(candidate.document_id))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map(c => ({
@@ -168,9 +187,9 @@ export async function processUserQuery(
 
     // B. Búsqueda Multinivel (Escenarios + Chunks)
     // Si la pregunta es corta (ej: "4to grado"), incluimos la pregunta anterior en la búsqueda para mantener contexto
-    const searchContext = (question.length < 20 && history?.[0]) 
-      ? `${history[0].question} ${question}` 
-      : question;
+      const searchContext = (question.length < 40 && history?.[0])
+        ? `${history[0].question} ${question}`
+        : question;
 
     const candidates = await hybridSearch(searchContext, userRole, RAG_RESULT_LIMIT);
 
@@ -188,11 +207,27 @@ export async function processUserQuery(
     // C. Preparar contexto (Priorizando Q&A y fragmentos relevantes)
     const contextChunks = candidates.map(c => ({ text: c.text, document_id: c.document_id, parent_id: c.parent_id }));
     const docIds = [...new Set(contextChunks.map(c => c.document_id))];
-    const { data: docInfo } = await supabaseAdmin.from('documents').select('id, name').in('id', docIds);
+    const requestedDocumentIds = await identifyTargetDocuments(searchContext);
+    const allDocIds = [...new Set([...docIds, ...requestedDocumentIds])];
+    const { data: docInfo } = await supabaseAdmin
+      .from('documents')
+      .select('id, name, content_optimized')
+      .in('id', allDocIds);
     const docMap = new Map((docInfo || []).map(d => [d.id, d.name]));
 
+    // Si el usuario nombra un documento, usa también su contenido completo.
+    // Esto cubre documentos antiguos cuyo proceso de ingestión dejó pocos chunks.
+    const requestedDocs = (docInfo || [])
+      .filter(d => requestedDocumentIds.includes(d.id) && d.content_optimized)
+      .map(d => ({
+        text: `[DOCUMENTO COMPLETO: ${d.name}]\n${d.content_optimized}`,
+        document_id: d.id,
+        parent_id: undefined,
+      }));
+    const allContextChunks = [...requestedDocs, ...contextChunks];
+
     const finalContext = limitText(
-      contextChunks.map(c => `[DOC: ${docMap.get(c.document_id) || 'Info'}]\n${c.text}`).join('\n\n---\n\n'),
+      allContextChunks.map(c => `[DOC: ${docMap.get(c.document_id) || 'Info'}]\n${c.text}`).join('\n\n---\n\n'),
       RAG_MAX_CONTEXT_CHARS
     );
 
@@ -276,15 +311,21 @@ REGLAS DE CLASIFICACIÓN:
     }
 
     // D2. Respuesta (Optimizado con Inteligencia Dialógica)
+    const greetingInstruction = chatHistory
+      ? 'No vuelvas a saludar ni a presentarte; continúa directamente con la respuesta.'
+      : 'Puedes saludar brevemente solo en esta primera respuesta, antes de contestar.';
     const systemPrompt = `Eres el Asistente Institucional de la Escuela Bilingüe Maquilishuat (EBM). 
 Tu misión es actuar como un Consultor Normativo profesional.
+
+${greetingInstruction}
 
 PROTOCOLO DE ENTREVISTA (SÚPER IMPORTANTE):
 1. ANÁLISIS DE VARIABLES: Antes de dar una respuesta final, analiza si la normativa recuperada tiene reglas que varían según el GRADO, NIVEL (Primaria/Secundaria) o EDAD.
 2. LA PREGUNTA LÓGICA: Si la normativa depende del grado y el usuario NO lo ha mencionado en su pregunta ni en el historial, NO des la respuesta completa. En su lugar, saluda amablemente y pide el dato faltante (Ej: "¿Podría indicarme de qué grado es el estudiante? Nuestra normativa varía según el nivel académico").
 3. MEMORIA: Revisa el HISTORIAL DE CONVERSACIÓN para ver si el usuario ya te dio ese dato antes.
 4. TONO: Institucional, amable y empático. NUNCA uses lenguaje técnico como "fragmento", "contexto proporcionado" o "sección".
-5. CITAS Y REFERENCIAS (OBLIGATORIO): Si tienes la información completa para responder, debes citar de forma explícita y visible el nombre de los documentos de origen de donde obtuviste la información directamente en el texto de tu respuesta (ej: "De acuerdo con el documento [Nombre del Documento]..."). Si la normativa contiene artículos, secciones, capítulos o numerales específicos en el texto, menciónalos detalladamente para facilitar que el usuario pueda consultarlo directamente en el documento escrito original.${levelContextInstruction}
+5. BÚSQUEDA Y FUNDAMENTO (OBLIGATORIO): Consulta todos los fragmentos proporcionados antes de responder. Si la pregunta menciona el manual, reglamento, código de conducta u otro documento, prioriza y cita esos fragmentos; no respondas con conocimiento general ni digas que no consultaste el documento si existe información pertinente en el contexto.
+6. CITAS Y REFERENCIAS (OBLIGATORIO): Si tienes la información completa para responder, debes citar de forma explícita y visible el nombre de los documentos de origen de donde obtuviste la información directamente en el texto de tu respuesta (ej: "De acuerdo con el documento [Nombre del Documento]..."). Si la normativa contiene artículos, secciones, capítulos o numerales específicos en el texto, menciónalos detalladamente para facilitar que el usuario pueda consultarlo directamente en el documento escrito original.${levelContextInstruction}
 
 HISTORIAL RECIENTE:
 ${chatHistory}`;
