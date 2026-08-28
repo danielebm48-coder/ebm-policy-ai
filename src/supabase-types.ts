@@ -129,6 +129,7 @@ export interface AIQuery {
   user_role: string;
   question: string;
   normalized_question?: string;
+  response_version?: string;
   answer?: string;
   source_documents?: string[];
   source_chunks?: string[];

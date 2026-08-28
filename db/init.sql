@@ -209,6 +209,7 @@ CREATE TABLE IF NOT EXISTS ai_queries (
   user_role TEXT NOT NULL REFERENCES roles(id),
   question TEXT NOT NULL,
   normalized_question TEXT,
+  response_version TEXT,
   answer TEXT,
   source_documents TEXT[],
   source_chunks TEXT[],

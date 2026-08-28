@@ -4,6 +4,9 @@
 ALTER TABLE ai_queries
   ADD COLUMN IF NOT EXISTS normalized_question TEXT;
 
+ALTER TABLE ai_queries
+  ADD COLUMN IF NOT EXISTS response_version TEXT;
+
 UPDATE ai_queries
 SET normalized_question = lower(trim(regexp_replace(regexp_replace(
   translate(question, 'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunAEIOUUN'),

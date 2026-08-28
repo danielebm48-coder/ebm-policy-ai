@@ -21,6 +21,8 @@ interface ChunkWithSimilarity {
 
 const RAG_RESULT_LIMIT = Number.parseInt(process.env.RAG_RESULT_LIMIT || '12', 10);
 const RAG_MAX_CONTEXT_CHARS = Number.parseInt(process.env.RAG_MAX_CONTEXT_CHARS || '24000', 10);
+const RAG_EXPLICIT_DOCUMENT_MAX_CHARS = Number.parseInt(process.env.RAG_EXPLICIT_DOCUMENT_MAX_CHARS || '120000', 10);
+const POLICY_RESPONSE_VERSION = '2';
 const GEMINI_ENABLE_CLASSIFIER = process.env.GEMINI_ENABLE_CLASSIFIER === 'true';
 
 function normalizeQuestion(question: string): string {
@@ -186,6 +188,7 @@ export async function processUserQuery(
       .select('answer, source_documents, tokens_used, error_message')
       .eq('user_role', userRole)
       .eq('normalized_question', normalizedQuestion)
+      .eq('response_version', POLICY_RESPONSE_VERSION)
       .eq('status', 'completed')
       .or('error_message.is.null,error_message.neq.NO_DOCUMENT_MATCH')
       .not('answer', 'is', null)
@@ -204,6 +207,7 @@ export async function processUserQuery(
         source_documents: cachedQuery.source_documents || [],
         tokens_used: { input: 0, output: 0, cached: true },
         model_used: geminiConfig.model,
+        response_version: POLICY_RESPONSE_VERSION,
         status: 'completed',
         completed_at: new Date().toISOString(),
       }]);
@@ -222,6 +226,7 @@ export async function processUserQuery(
       user_role: userRole,
       question,
       normalized_question: normalizedQuestion,
+      response_version: POLICY_RESPONSE_VERSION,
       status: 'processing',
     }]);
 
@@ -269,10 +274,47 @@ export async function processUserQuery(
       .in('id', allDocIds);
     const docMap = new Map((docInfo || []).map(d => [d.id, d.name]));
 
-    const finalContext = limitText(
+    let finalContext = limitText(
       contextChunks.map(c => `[DOC: ${docMap.get(c.document_id) || 'Info'}]\n${c.text}`).join('\n\n---\n\n'),
       RAG_MAX_CONTEXT_CHARS
     );
+
+    // Cuando se nombra un documento, la fuente de verdad es su contenido ingerido,
+    // no solamente los chunks que resultaron mejor posicionados en la búsqueda.
+    if (requestedDocumentIds.length > 0) {
+      const docsWithContent = (docInfo || []).filter(
+        d => requestedDocumentIds.includes(d.id) && typeof d.content_optimized === 'string' && d.content_optimized.trim()
+      );
+      const docsWithoutContent = requestedDocumentIds.filter(
+        documentId => !docsWithContent.some(d => d.id === documentId)
+      );
+      let documentFallbackChunks: Array<{ document_id: string; text: string }> = [];
+
+      if (docsWithoutContent.length > 0) {
+        const { data: storedChunks } = await supabaseAdmin
+          .from('document_chunks')
+          .select('document_id, chunk_number, text')
+          .in('document_id', docsWithoutContent)
+          .order('document_id', { ascending: true })
+          .order('chunk_number', { ascending: true });
+        documentFallbackChunks = storedChunks || [];
+      }
+
+      const completeDocuments = [
+        ...docsWithContent.map(d => `[DOCUMENTO COMPLETO: ${d.name}]\n${d.content_optimized}`),
+        ...docsWithoutContent.map(documentId => {
+          const chunks = documentFallbackChunks
+            .filter(chunk => chunk.document_id === documentId)
+            .map(chunk => chunk.text)
+            .join('\n\n');
+          return `[DOCUMENTO COMPLETO RECONSTRUIDO: ${docMap.get(documentId) || 'Documento'}]\n${chunks}`;
+        }),
+      ].filter(text => !text.endsWith('\n'));
+
+      if (completeDocuments.length > 0) {
+        finalContext = limitText(completeDocuments.join('\n\n---\n\n'), RAG_EXPLICIT_DOCUMENT_MAX_CHARS);
+      }
+    }
 
     // D1. Clasificación de variables (Protocolo de Entrevista Dinámica)
     let clarifyText: string | null = null;
@@ -367,8 +409,9 @@ PROTOCOLO DE ENTREVISTA (SÚPER IMPORTANTE):
 2. LA PREGUNTA LÓGICA: Si la normativa depende del grado y el usuario NO lo ha mencionado en su pregunta ni en el historial, NO des la respuesta completa. En su lugar, saluda amablemente y pide el dato faltante (Ej: "¿Podría indicarme de qué grado es el estudiante? Nuestra normativa varía según el nivel académico").
 3. MEMORIA: Revisa el HISTORIAL DE CONVERSACIÓN para ver si el usuario ya te dio ese dato antes.
 4. TONO: Institucional, amable y empático. NUNCA uses lenguaje técnico como "fragmento", "contexto proporcionado" o "sección".
-5. BÚSQUEDA Y FUNDAMENTO (OBLIGATORIO): Consulta todos los fragmentos proporcionados antes de responder. Si la pregunta menciona el manual, reglamento, código de conducta u otro documento, prioriza y cita esos fragmentos; no respondas con conocimiento general ni digas que no consultaste el documento si existe información pertinente en el contexto.
+5. BÚSQUEDA Y FUNDAMENTO (OBLIGATORIO): Consulta todo el documento proporcionado antes de responder. Si la pregunta menciona el manual, reglamento, código de conducta u otro documento, usa prioritariamente el contenido marcado como DOCUMENTO COMPLETO y cita ese documento; no respondas con conocimiento general.
 6. CITAS Y REFERENCIAS (OBLIGATORIO): Si tienes la información completa para responder, debes citar de forma explícita y visible el nombre de los documentos de origen de donde obtuviste la información directamente en el texto de tu respuesta (ej: "De acuerdo con el documento [Nombre del Documento]..."). Si la normativa contiene artículos, secciones, capítulos o numerales específicos en el texto, menciónalos detalladamente para facilitar que el usuario pueda consultarlo directamente en el documento escrito original.${levelContextInstruction}
+7. HONESTIDAD SOBRE LA FUENTE: No digas que solo tienes fragmentos, que el manual no fue consultado o que el usuario debe buscar el documento completo cuando el contexto incluya DOCUMENTO COMPLETO. Si la disposición no aparece en el documento, dilo claramente y no inventes sanciones ni artículos.
 
 HISTORIAL RECIENTE:
 ${chatHistory}`;
@@ -381,6 +424,7 @@ ${chatHistory}`;
       answer: result.answer,
       source_documents: docNames,
       model_used: geminiConfig.model,
+      response_version: POLICY_RESPONSE_VERSION,
       tokens_used: result.tokensUsed,
       status: 'completed',
       completed_at: new Date().toISOString()
