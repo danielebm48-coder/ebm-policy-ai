@@ -1,6 +1,9 @@
 -- Cache persistente de preguntas recurrentes para reducir llamadas a Gemini.
 -- Ejecutar una vez en el SQL Editor de Supabase.
 
+ALTER TABLE documents
+  ADD COLUMN IF NOT EXISTS content_original TEXT;
+
 ALTER TABLE ai_queries
   ADD COLUMN IF NOT EXISTS normalized_question TEXT;
 

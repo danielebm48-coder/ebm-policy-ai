@@ -225,6 +225,7 @@ export async function createDocument(
           storage_path: `documents/${documentId}`,
           uploaded_by: uploadedBy,
           status: 'active',
+          content_original: text,
           content_optimized: optimizedText,
           is_optimized: optimizedText !== text
         },
@@ -458,6 +459,8 @@ export async function updateDocument(
       type: updates.type,
       category: updates.category,
       description: updates.description,
+      content_original: updates.text,
+      content_optimized: updates.text,
       version: (existing.version || 1) + 1,
       last_updated: new Date().toISOString(),
     })

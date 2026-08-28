@@ -8,6 +8,9 @@ export interface User {
   active: boolean;
   password: string;
   created_at: string;
+  content_original?: string;
+  content_optimized?: string;
+  is_optimized?: boolean;
 }
 
 export interface Policy {

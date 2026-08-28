@@ -160,6 +160,9 @@ CREATE TABLE IF NOT EXISTS documents (
   last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived', 'draft')),
   version INTEGER NOT NULL DEFAULT 1,
+  content_original TEXT,
+  content_optimized TEXT,
+  is_optimized BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

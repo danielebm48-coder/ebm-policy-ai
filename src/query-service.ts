@@ -270,7 +270,7 @@ export async function processUserQuery(
     const allDocIds = [...new Set([...docIds, ...requestedDocumentIds])];
     const { data: docInfo } = await supabaseAdmin
       .from('documents')
-      .select('id, name, content_optimized')
+      .select('id, name, content_original, content_optimized')
       .in('id', allDocIds);
     const docMap = new Map((docInfo || []).map(d => [d.id, d.name]));
 
@@ -283,7 +283,7 @@ export async function processUserQuery(
     // no solamente los chunks que resultaron mejor posicionados en la búsqueda.
     if (requestedDocumentIds.length > 0) {
       const docsWithContent = (docInfo || []).filter(
-        d => requestedDocumentIds.includes(d.id) && typeof d.content_optimized === 'string' && d.content_optimized.trim()
+        d => requestedDocumentIds.includes(d.id) && typeof (d.content_original || d.content_optimized) === 'string' && (d.content_original || d.content_optimized).trim()
       );
       const docsWithoutContent = requestedDocumentIds.filter(
         documentId => !docsWithContent.some(d => d.id === documentId)
@@ -301,7 +301,7 @@ export async function processUserQuery(
       }
 
       const completeDocuments = [
-        ...docsWithContent.map(d => `[DOCUMENTO COMPLETO: ${d.name}]\n${d.content_optimized}`),
+        ...docsWithContent.map(d => `[DOCUMENTO COMPLETO: ${d.name}]\n${d.content_original || d.content_optimized}`),
         ...docsWithoutContent.map(documentId => {
           const chunks = documentFallbackChunks
             .filter(chunk => chunk.document_id === documentId)
